@@ -1,4 +1,3 @@
-google-safebrowsing2
-====================
+# Google Safebrowsing
 
-Google Safe Browsing v2 library for Scala / Java
+This is a port of Julien Sobrier's [Net-Google-SafeBrowsing2](https://github.com/juliensobrier/Net-Google-SafeBrowsing2) into Scala / Java.
