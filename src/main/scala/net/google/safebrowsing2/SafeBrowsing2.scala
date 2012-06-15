@@ -8,6 +8,8 @@ import org.apache.commons.codec.binary.Base64
 import scala.collection.mutable.ListBuffer
 import java.net.URLEncoder
 import javax.crypto
+import net.google.safebrowsing2.model.ChunkType
+import net.google.safebrowsing2.model.Chunk
 
 object SafeBrowsing2 {
   val MALWARE 					= "goog-malware-shavar"
@@ -39,20 +41,24 @@ class SafeBrowsing2(storage: Storage) {
   var debug			= 0
   var errors		= 0
   var last_error	= ""
-  var mac			= 0
+  var macKey: Option[MacKey] = None 
 
   def update(listName: String, force: Boolean = false, mac: Boolean = false): Result = {
 
-	val toUpdate = lists.filter(list => {
-	  val info = storage.lastUpdate(list)
-	  val tooEarly = info.getTime() + info.getWait() > new Date().getTime() && !force
-	  if (tooEarly) {
-		log.debug("Too early to update {}\n", list)
-	  } else {
-	    log.debug("OK to update {}: {} / {}", Array(list, new Date().getTime(), info.getTime() + info.getWait()))
-	  }
-	  !tooEarly
-	})
+    val toUpdate: Array[String] = if (!listName.isEmpty()) {
+      Array(listName)
+    } else {
+		lists.filter(list => {
+		  val info = storage.lastUpdate(list)
+		  val tooEarly = info.getTime() + info.getWait() > new Date().getTime() && !force
+		  if (tooEarly) {
+			log.debug("Too early to update {}\n", list)
+		  } else {
+		    log.debug("OK to update {}: {} / {}", Array(list, new Date().getTime(), info.getTime() + info.getWait()))
+		  }
+		  !tooEarly
+		})
+ 	}
 	
 	if (toUpdate.isEmpty){
 		log.debug("Too early to update any list");
@@ -62,7 +68,6 @@ class SafeBrowsing2(storage: Storage) {
 	// MAC?
 	val client_key = ""
 	val wrapped_key = ""
-	var macKey: Option[MacKey] = None 
 	if (mac) {
 		macKey = get_mac_keys orElse {
 		  return MAC_KEY_ERROR;
@@ -99,8 +104,6 @@ class SafeBrowsing2(storage: Storage) {
 	val response = Http.postData(postUrl, body)
 
 	log.debug(response.toString)
-	val responseData = response.asString
-	val lines = responseData.split("\\s")
 
 	response.responseCode match {
 	  case 200 => {}
@@ -111,98 +114,53 @@ class SafeBrowsing2(storage: Storage) {
 	  }
 	}
 
-	val last_update = new Date()
-	var wait = 0;
-	var list = ""
-	val redirects = new ListBuffer[(String, String, String)]()
-	var result = 0
-	  
-	val NextPattern = """^n:\s*(\d+)\s*$""".r
-	val ListPattern = """^i:\s*(\S+)\s*$""".r
-	val RedirectMacPattern = """^u:\s*(\S+),(\S+)\s*$""".r
-	val RedirectPattern = """^u:\s*(\S+)\s*$""".r
-	val DeleteAddPattern = """^ad:\s*(\S+)\s*$""".r
-	val DeleteSubPattern = """^sd:\s*(\S+)\s*$""".r
-	val MacPattern = """^m:\s*(\S+)\s*$""".r
-	val ResKeyPattern = """^e:\s*pleaserekey\s*$""".r
-	val ResetPattern = """^r:\s*pleasereset\s*$""".r
+	val responseData = response.asString
+
+	val parseResult = RFDResponseParser.parse(responseData) match {
+      case RFDResponseParser.Success(resp, _) => Option(resp)
+      case x => log.error("Error parsing RFD response: " + x); return INTERNAL_ERROR
+    }
 	
-	lines foreach (line => {
-	  line match {
-	  case NextPattern(n) => log.debug("Next poll: {} seconds", n); wait = n.toInt
-	  case ListPattern(l) => log.debug("List: {}", l); list = l
-	  case RedirectMacPattern(url, mac) => log.debug("Redirection: {}:{}", url, mac); redirects + ((url, list, mac))
-	  case RedirectPattern(url, mac) => log.debug("Redirection: {}", url, mac); redirects + ((url, list, ""))
-	  case DeleteAddPattern(chunks) => {
-	    log.debug("Delete Add Chunks: {}", chunks)
-	    val nums = expand_range(chunks)
-	    storage.deleteAddChunks(nums, list)
-	    
-	    // Delete full hash as well
-	    storage.deleteFullHashes(nums, list)
-	    result = 1
-	  }
-	  case DeleteSubPattern(chunks) => {
-	    log.debug("Delete Sub Chunks: {}", chunks)
-	    val nums = expand_range(chunks)
-	    storage.deleteSubChunks(nums, list)
-	    result = 1
-	  }
-	  case MacPattern(m) => {
-	    macKey map (mac => {
-	       log.debug("MAC of request: {}", m)
-	    val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
-	    if (! validate_data_mac(data, mac.getClientKey(), m)){
-	      log.error("MAC error on main request")
-	      return MAC_ERROR
+	val res = parseResult.get
+	res.mac match {
+	  case Some(m) => m match {
+	    case "rekey" => {
+	      storage.delete_mac_keys()
+	      return update(listName, force, mac)
 	    }
-	    })
-	  }
-	  case ResKeyPattern => {
-	    log.debug("MAC key has been expired")
-	    storage.delete_mac_keys()
-	    return update(list, force, mac)
-	  }
-	  case ResetPattern => {
-	    log.debug("Database must be reset")
-	    storage.reset(list)
-	    return DATABASE_RESET
-	  }
-	}
-	})
-
-	if (redirects.size > 0)
-		result = 1
-
-	redirects.toList foreach (e => {
-	  val (redirection, list, hmac) = e
-	  log.debug("Checking redirection http://{} ({})", redirection, list)
-	  val res = Http("http://" + redirection)
-	  res.responseCode match {
-	    case 200 => {}
 	    case _ => {
-	      log.error("Request to {} failed", redirection)
-	      lists foreach (list => {
-	        storage.updateError(last_update, list)
-	      })
-	      return SERVER_ERROR
+	         log.debug("MAC of request: {}", m)
+	         val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
+	         if (! validate_data_mac(data, macKey.get.getClientKey(), m)){
+	        	 	log.error("MAC error on main request")
+	        	 	return MAC_ERROR
+	         }
 	    }
 	  }
-	  
-	  val data = res.asString
-	  if (log.isDebugEnabled())
-		  log.debug(data.substring(0, 250))
-	  
-	  macKey map { key =>
-    	  if (!validate_data_mac(data, key.getClientKey(), hmac)){
-    	    log.error("MAC error on redirection")
-    	    log.debug("Length of data: " + data.length())
-    	    return MAC_ERROR
-    	  }
+	  case _ => {/* no mac so ignore*/}
+	}
+	
+	res.reset match {
+	  case Some(x) => {
+		  log.debug("Database must be reset")
+		  toUpdate foreach(l => storage.reset(l))
+		  return DATABASE_RESET
 	  }
-	  
-	  val result = parse_data(data, list)
+	  case _ => {}
+	}
+	
+	res.list foreach(list => {
+	  list foreach(chunklist => {
+	    chunklist.data foreach(d => {
+	      d match {
+	        case RFDResponseParser.Redirect(url, mac) => processRedirect(url, mac, chunklist.name)
+	        case RFDResponseParser.AdDel(adlist) => processDelAd(adlist, chunklist.name)
+	        case RFDResponseParser.SubDel(sublist) => processDelSub(sublist, chunklist.name)
+	      }
+	    })
+	  })
 	})
+	
 	return SUCCESSFUL
 //	foreeach {
 //
@@ -223,6 +181,58 @@ class SafeBrowsing2(storage: Storage) {
 //
 //	return $result; # ok
 }
+  
+  def processDelAd(nums: List[Int], list: String) = {
+	  log.debug("Delete Add Chunks: {}", nums)
+	    storage.deleteAddChunks(nums, list)
+	    
+	    // Delete full hash as well
+	    storage.deleteFullHashes(nums, list)
+  }
+  
+  def processDelSub(nums: List[Int], list: String) = {
+    log.debug("Delete Sub Chunks: {}", nums)
+	 storage.deleteSubChunks(nums, list)
+  }
+  
+  def processRedirect(url: String, hmac: String, list: String) {
+	  log.debug("Checking redirection http://{} ({})", url, list)
+	  val res = Http("http://" + url)
+	  res.responseCode match {
+	    case 200 => {}
+	    case _ => {
+	      log.error("Request to {} failed", url)
+	      lists foreach (list => {
+	        storage.updateError(new Date(), list)
+	      })
+	      return SERVER_ERROR
+	    }
+	  }
+	  
+	  val data = res.asString
+	  if (log.isDebugEnabled())
+		  log.debug(data.substring(0, 250))
+	  
+	  macKey map { key =>
+    	  if (!validate_data_mac(data, key.getClientKey(), hmac)){
+    	    log.error("MAC error on redirection")
+    	    log.debug("Length of data: " + data.length())
+    	    return MAC_ERROR
+    	  }
+	  }
+	  
+	 val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); return INTERNAL_ERROR //TODO record error
+    }
+	 
+	 parsed.get foreach (l => {
+	   l match {
+	     case a: DataParser.AdHead => storage.addChunks_a(a.chunknum, a.host, a.prefix, list)
+	     case s: DataParser.SubHead => storage.addChunks_s(s.chunknum, s.host, s.pairs, list)
+	   }
+	 })
+  }
   
   def get_mac_keys: Option[MacKey] = {
 
@@ -325,55 +335,5 @@ class SafeBrowsing2(storage: Storage) {
     log.debug("{} / {}", sig, digest)
     sig == digest
   }
-   
-   def parse_data(data: String, list: String) = {
-//	val chunk_num = 0;
-//    val hash_length = 0;
-//	val chunk_length = 0;
-//
-//	while (data.length > 0) {
-//	  println("Length 1: " + data.length)  // 58748
-//	  val tpe = data.substring(0,2)
-//			my $type = substr($data, 0, 2, ''); # s:34321:4:137
-//	# 		print "Length 1.5: ", length $data, "\n"; # 58746 -2
-//	
-//			if ($data  =~ /^(\d+):(\d+):(\d+)\n/sgi) {
-//				$chunk_num = $1;
-//				$hash_length = $2;
-//				$chunk_length = $3;
-//	
-//				# shorten data
-//				substr($data, 0, length($chunk_num) + length($hash_length) + length($chunk_length) + 3, '');
-//	# 			print "Remove ", length($chunk_num) + length($hash_length) + length($chunk_length) + 3, "\n";
-//	# 			print "Length 2: ", length $data, "\n"; # 58741 -5
-//	
-//				my $encoded = substr($data, 0, $chunk_length, '');
-//	# 			print "Length 3: ", length $data, "\n"; # 58604 -137
-//	
-//				if ($type eq 's:') {
-//					my @chunks = $self->parse_s(value => $encoded, hash_length => $hash_length);
-//
-//					$self->{storage}->add_chunks(type => 's', chunknum => $chunk_num, chunks => [@chunks], list => $list); # Must happen all at once => not 100% sure
-//				}
-//				elsif ($type eq 'a:') {
-//					my @chunks = $self->parse_a(value => $encoded, hash_length => $hash_length);
-//					$self->{storage}->add_chunks(type => 'a', chunknum => $chunk_num, chunks => [@chunks], list => $list); # Must happen all at once => not 100% sure
-//				}
-//				else {
-//					$self->error("Incorrect chunk type: $type, should be a: or s:\n");
-//					return INTERNAL_ERROR;# failed
-//				}
-//	
-//				$self->debug("$type$chunk_num:$hash_length:$chunk_length OK\n");
-//			
-//			}
-//			else {
-//				$self->error("could not parse header\n");
-//				return INTERNAL_ERROR;# failed
-//			}
-//		}
-//
-//	return SUCCESSFUL;
-}
 }
 

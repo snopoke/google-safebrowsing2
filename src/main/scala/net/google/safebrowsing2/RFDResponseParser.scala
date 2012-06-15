@@ -5,16 +5,16 @@ import scala.collection.mutable
 object RFDResponseParser extends RegexParsers {
   override def skipWhitespace = false
 
-  case class Chunk(mac: Option[String], next: Int, reset: Option[Boolean], list: Option[List[ChunkList]])
+  case class Resp(mac: Option[String], next: Int, reset: Option[Boolean], list: Option[List[ChunkList]])
   case class ChunkList(name: String, data: List[ListData])
   abstract trait ListData
-  case class Redirect(url: String) extends ListData
+  case class Redirect(url: String, mac: String) extends ListData
   case class AdDel(list: List[Int]) extends ListData
   case class SubDel(list: List[Int]) extends ListData
   
   def parse(input: String) = parseAll(chunk, input)
   def chunk = opt(rekey | mac) ~ next ~ opt(reset) ~ opt(list+) ^^ {
-    case m ~ n ~ r ~ l => Chunk(m, n, r, l)
+    case m ~ n ~ r ~ l => Resp(m, n, r, l)
   }
   def rekey = "e:please" ~> "rekey" <~ space
   def mac = """[a-z0-9]*""".r <~ space
@@ -26,7 +26,7 @@ object RFDResponseParser extends RegexParsers {
   def number = """[0-9]*""".r
   def listname = """[a-z0-9\-]*""".r <~ space
   def listdata: Parser[ListData] = redirecturl | addelHead | subdelHead
-  def redirecturl = "u:" ~> url <~ space ^^ { u => Redirect(u) }
+  def redirecturl = "u:" ~> url <~ space ^^ { u => Redirect(u, "") } // TODO: add mac
   def addelHead = "ad:" ~> chunklist <~ space ^^ { ad => AdDel(ad.reduce((list, n) => list ::: n)) }
   def subdelHead = "sd:" ~> chunklist <~ space ^^ { sd => SubDel(sd.reduce((list, n) => list ::: n)) }
   def url = """(\S+)""".r

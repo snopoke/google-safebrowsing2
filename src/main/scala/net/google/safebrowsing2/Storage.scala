@@ -11,11 +11,9 @@ import net.google.safebrowsing2.model.MacKey
 
 trait Storage {
 
-  def addChunks(t: ChunkType, chunknum: Int, chunks: Collection[Chunk], list: String)
+  def addChunks_s(chunknum: Int, hostkey: String, chunks: List[(String,String)], list: String)
 
-  def addChunks_s(chunknum: Int, chunks: Collection[Chunk], list: String)
-
-  def addChunks_a(chunknum: Int, chunks: Collection[Chunk], list: String)
+  def addChunks_a(chunknum: Int, hostkey: String, prefixes: List[String], list: String)
 
   def getAddChunks(hostkey: String): Collection[Chunk]
 

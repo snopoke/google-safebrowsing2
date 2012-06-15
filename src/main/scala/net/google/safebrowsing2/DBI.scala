@@ -182,23 +182,14 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
     queryEvaluator.execute(schema)
   }
 
-  override def addChunks(t: ChunkType, chunknum: Int, chunks: Collection[Chunk], list: String) = {
-    t match {
-      case ChunkType.s => addChunks_s(chunknum, chunks, list)
-      case ChunkType.a => addChunks_a(chunknum, chunks, list)
-    }
-  }
-
-  override def addChunks_s(chunknum: Int, chunks: Collection[Chunk], list: String) = {
+  override def addChunks_s(chunknum: Int, hostkey: String, chunks: List[(String,String)], list: String) = {
 
     val delQuery = "DELETE FROM s_chunks WHERE hostkey = ? AND prefix = ? AND num = ? AND add_num = ? AND list = ?"
     val addQuery = "INSERT INTO s_chunks (hostkey, prefix, num, add_num, list) VALUES (?, ?, ?, ?, ?)"
 
-    chunks foreach (chunk => {
-      queryEvaluator.execute(delQuery,
-        chunk.getHostkey(), chunk.getPrefix(), chunknum, chunk.getAddChunknum(), list)
-      queryEvaluator.insert(addQuery,
-        chunk.getHostkey(), chunk.getPrefix(), chunknum, chunk.getAddChunknum(), list)
+    chunks foreach (tuple => {
+      queryEvaluator.execute(delQuery, hostkey, tuple._2, chunknum, tuple._1, list)
+      queryEvaluator.insert(addQuery, hostkey, tuple._2, chunknum, tuple._1, list)
     })
 
     if (chunks.isEmpty) { // keep empty chunks
@@ -207,19 +198,17 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
     }
   }
 
-  override def addChunks_a(chunknum: Int, chunks: Collection[Chunk], list: String) = {
+  override def addChunks_a(chunknum: Int, hostkey: String, prefixes: List[String], list: String) = {
 
     val delQuery = "DELETE FROM a_chunks WHERE hostkey = ? AND  prefix  = ? AND num = ? AND  list  = ?"
     val addQuery = "INSERT INTO a_chunks (hostkey, prefix, num, list) VALUES (?, ?, ?, ?)"
 
-    chunks foreach (chunk => {
-      queryEvaluator.execute(delQuery,
-        chunk.getHostkey(), chunk.getPrefix(), chunknum, list)
-      queryEvaluator.insert(addQuery,
-        chunk.getHostkey(), chunk.getPrefix(), chunknum, list)
+    prefixes foreach (prefix => {
+      queryEvaluator.execute(delQuery, hostkey, prefix, chunknum, list)
+      queryEvaluator.insert(addQuery, hostkey, prefix, chunknum, list)
     })
 
-    if (chunks.isEmpty) { // keep empty chunks
+    if (prefixes.isEmpty) { // keep empty chunks
       queryEvaluator.execute(delQuery, "", "", chunknum, list)
       queryEvaluator.insert(addQuery, "", "", chunknum, list)
     }
