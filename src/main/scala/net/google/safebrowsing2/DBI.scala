@@ -4,7 +4,6 @@ import java.util.Date
 import java.util.{ List => JavaList }
 import com.twitter.querulous.evaluator.QueryEvaluator
 import net.google.safebrowsing2.model.Chunk
-import net.google.safebrowsing2.model.ChunkType
 import net.google.safebrowsing2.model.Hash
 import net.google.safebrowsing2.model.MacKey
 import net.google.safebrowsing2.model.Status
@@ -269,17 +268,17 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
 
   override def updated(time: Date, wait: Int, list: String) = {
     if (lastUpdate(list) == 0) {
-      queryEvaluator.insert("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, 0, ?)", time, wait, list)
+      queryEvaluator.insert("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, 0, ?)", time.getTime(), wait, list)
     } else {
-      queryEvaluator.execute("UPDATE updates SET last = ?, wait = ?, errors = 0 WHERE list = ?", time, wait, list)
+      queryEvaluator.execute("UPDATE updates SET last = ?, wait = ?, errors = 0 WHERE list = ?", time.getTime(), wait, list)
     }
   }
 
   override def updateError(time: Date, list: String, wait: Int = 60, errors: Int = 1) = {
-    if (lastUpdate(list).getTime() == 0) {
-      queryEvaluator.insert("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, 0, ?)", time, wait, list)
+    if (lastUpdate(list).updateTime == 0) {
+      queryEvaluator.insert("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, 0, ?)", time.getTime(), wait, list)
     } else {
-      queryEvaluator.execute("UPDATE updates SET last = ?, wait = ?, errors = 0 WHERE list = ?", time, wait, list)
+      queryEvaluator.execute("UPDATE updates SET last = ?, wait = ?, errors = 0 WHERE list = ?", time.getTime(), wait, list)
     }
   }
 

@@ -3,7 +3,6 @@ package net.google.safebrowsing2
 import java.util.Collection
 import java.util.Date
 import java.util.{List => JavaList}
-import net.google.safebrowsing2.model.ChunkType
 import net.google.safebrowsing2.model.Hash
 import net.google.safebrowsing2.model.Chunk
 import net.google.safebrowsing2.model.Status

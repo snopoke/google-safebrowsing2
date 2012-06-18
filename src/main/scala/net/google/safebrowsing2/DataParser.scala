@@ -44,7 +44,9 @@ object DataParser extends RegexParsers {
   }
   
   def parse(input: String) = parseAll(data, input)
+  
   def data = (addHead | subHead)+
+
   def number = """[0-9]*""".r
   def addHead = "a:" ~> head ^^ {
     case cnum~s1~hlen~s2~data => AdHead(cnum.toInt, hlen.toInt, data)

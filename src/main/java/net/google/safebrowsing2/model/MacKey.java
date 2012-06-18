@@ -30,4 +30,9 @@ public class MacKey {
 		this.wrappedKey = wrappedKey;
 	}
 
+	@Override
+	public String toString() {
+		return "MacKey [clientKey=" + clientKey + ", wrappedKey=" + wrappedKey
+				+ "]";
+	}
 }

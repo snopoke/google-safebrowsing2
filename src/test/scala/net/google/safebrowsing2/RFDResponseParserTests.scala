@@ -11,7 +11,7 @@ class RFDResponseParserTests {
     val response = "8798asf987as\n" +
       "n:123\n" +
       "i:google-list-123\n" +
-      "u:http://redir1\n" +
+      "u:http://redir1,mac1\n" +
       "u:http://redir2\n" +
       "ad:1,2-4,5\n" +
       "i:google-list-456\n" +
@@ -23,7 +23,7 @@ class RFDResponseParserTests {
     assertTrue(parsed.isDefined)
 
     val adl = List(1,2,3,4,5)
-    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", ""), Redirect("http://redir2", ""), AdDel(adl)))
+    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", Option("mac1")), Redirect("http://redir2", None), AdDel(adl)))
     val cl2 = ChunkList("google-list-456", List(SubDel(List(5,6,7,8,9,12,13,14,15,16))))
     val clist = List(cl1, cl2)
     assertThat(parsed.get, is(Resp(Some("8798asf987as"), 123, None, Some(clist))))
@@ -44,7 +44,7 @@ class RFDResponseParserTests {
     assertTrue("parsing failed", parsed.isDefined)
 
     val adl = List(1,2,3,4,5)
-    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", ""), AdDel(adl)))
+    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", None), AdDel(adl)))
     assertThat(parsed.get, is(Resp(None, 123, None, Some(cl1 :: Nil))))
   }
 
