@@ -104,5 +104,35 @@ class SafeBrowsing2Tests extends MockitoSugar {
     verify(storage).addChunks_a(6,"cded",List("ab","cd"), "list")
     verify(storage).addChunks_s(3,"45sd",List(("789a","")), "list")
   }
-
+  
+  @Test
+  def testCanonicalDomainSuffixes = {
+    val domains = sb2.canonicalDomainSuffixes("www.google.com")
+    assertThat(domains.size, is(2))
+    assertTrue(domains.contains("www.google.com"))
+    assertTrue(domains.contains("google.com"))
+  }
+  
+  @Test
+  def testCanonicalDomainSuffixes_short = {
+    val domains = sb2.canonicalDomainSuffixes("google.com")
+    assertThat(domains.size, is(1))
+    assertTrue(domains.contains("google.com"))
+  }
+  
+  @Test
+  def testCanonicalDomainSuffixes_long = {
+    val domains = sb2.canonicalDomainSuffixes("malware.testing.google.test")
+    assertThat(domains.size, is(2))
+    assertTrue(domains.contains("google.test"))
+    assertTrue(domains.contains("testing.google.test"))
+  }
+  
+  @Test
+  def testPrefix = {
+    val prefix = sb2.prefix("abc")
+    assertThat(prefix.length, is(4))
+    val e: Array[Byte] = Array(0xBA, 0x78, 0x16, 0xBF).map(_.toByte)
+    assertThat(prefix, is(e))
+  }
 }

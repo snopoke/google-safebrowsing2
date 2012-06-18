@@ -10,6 +10,9 @@ import net.google.safebrowsing2.model.Chunk
 import com.github.tototoshi.http.Client
 import scala.util.control.Breaks._
 import com.twitter.conversions.time
+import java.net.URL
+import scala.collection.mutable
+import net.google.safebrowsing2.Helpers._
 
 object SafeBrowsing2 {
   val MALWARE = "goog-malware-shavar"
@@ -29,6 +32,10 @@ object Result extends Enumeration {
   val NO_DATA = Value("NO_DATA") // no data sent
   val SUCCESSFUL = Value("SUCCESSFUL") // data sent
 }
+
+//abstract trait ChunkData
+//case class AdHead(chunknum: Int, host: String, prefixes: List[String]) extends ChunkData
+//case class SubHead(chunknum: Int, host: String, prefixes: List[(String, String)]) extends ChunkData
 
 import Result._
 class SafeBrowsing2(storage: Storage) {
@@ -111,7 +118,7 @@ class SafeBrowsing2(storage: Storage) {
         case _ => {
           log.debug("MAC of request: {}", m)
           val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
-          if (!validate_data_mac(data, macKey.get.getClientKey(), m)) {
+          if (!validate_data_mac(data.getBytes(), macKey.get.getClientKey(), m)) {
             log.error("MAC error on main request")
             return MAC_ERROR
           }
@@ -172,6 +179,118 @@ class SafeBrowsing2(storage: Storage) {
     return SUCCESSFUL
   }
 
+  /**
+   * Lookup a URL against the Google Safe Browsing database.
+   * @param url
+   * @param listName Optional. Lookup against a specific list. Use the list(s) from new() by default.
+   * @returns Returns the name of the list if there is any match, returns an empty string otherwise.
+   */
+  def lookup(url: String, listName: String = "") = {
+    val candidates: Array[String] = if (!listName.isEmpty()) {
+      Array(listName)
+    } else {
+      lists
+    }
+
+    // TODO: create our own URI management for canonicalization
+    // fix for http:///foo.com (3 ///)
+    var cleanurl = url.replaceAll("""(https?:\/\/)\/+""", "$1")
+    val uri = new URL(cleanurl)
+    val domain = uri.getHost()
+    val hosts = canonicalDomainSuffixes(domain) // only top-2 in this case
+
+    hosts foreach (host => {
+      log.debug("Domain for key: {} => {}", domain, host)
+      val suffix = prefix(host + "/") // Don't forget trailing hash
+      log.debug("Host key: {}", bytes2Hex(suffix))
+    })
+    //	foreach my $host (@hosts) {
+    //		$self->debug("Domain for key: $domain => $host\n");
+    //		my $suffix = $self->prefix("$host/"); # Don't forget trailing hash
+    //		$self->debug("Host key: " . $self->hex_to_ascii($suffix) . "\n");
+    //
+    //		my $match = $self->lookup_suffix(lists => [@lists], url => $url, suffix => $suffix);
+    //		return $match if ($match ne '');
+    //	}
+    //
+    //	return '';
+  }
+
+  ///**
+  // * Find all canonical paths for a URL.
+  // */
+  //def canonical_path(path: String) = {
+  //
+  //	my @paths = ($path); # return full path
+  //	
+  //	if ($path =~ /\?/) {
+  //		$path =~ s/\?.*$//;
+  //
+  //		push(@paths, $path);
+  //	}
+  //
+  //	my @parts = split /\//, $path;
+  //	my $previous = '';
+  //	while (scalar @parts > 1 && scalar @paths < 6) {
+  //		my $val = shift(@parts);
+  //		$previous .= "$val/";
+  //
+  //		push(@paths, $previous);
+  //	}
+  //	
+  //	return @paths;
+  //}
+
+  /**
+   * Return a hash prefix. The size of the prefix is set to 4 bytes.
+   */
+  def prefix(s: String): Array[Byte] = {
+    sha256(s).take(4)
+  }
+
+  /**
+   * Find all canonical domains a domain.
+   */
+  def canonicalDomain(domain: String): Seq[String] = {
+
+    if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
+      // loose check for IP address, should be enough
+      return Array(domain);
+    }
+
+    val domains = mutable.MutableList[String]()
+    var parts = domain.split("""\.""")
+    parts = parts.takeRight(6)
+    while (parts.length > 2) {
+      domains += parts.mkString(".")
+      parts = parts.drop(1)
+    }
+
+    domains
+  }
+
+  /**
+   * Find all suffixes for a domain.
+   */
+  def canonicalDomainSuffixes(domain: String): Seq[String] = {
+
+    if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
+      // loose check for IP address, should be enough
+      return Array(domain);
+    }
+
+    val domains = mutable.MutableList[String]()
+    var parts = domain.split("""\.""")
+    if (parts.length >= 3) {
+      parts = parts.takeRight(3)
+      domains += parts.mkString(".")
+      parts = parts.drop(1)
+    }
+
+    domains += parts.mkString(".")
+    domains
+  }
+
   def getExistingChunks(lists: Array[String], withMac: Boolean): String = {
     var body = ""
 
@@ -217,7 +336,7 @@ class SafeBrowsing2(storage: Storage) {
     log.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
 
-    val data = res.asString
+    val data = res.asBytes()
     res.statusCode() match {
       case 200 => {}
       case other => {
@@ -226,15 +345,12 @@ class SafeBrowsing2(storage: Storage) {
       }
     }
 
-    if (log.isDebugEnabled())
-      log.debug(data.substring(0, 250))
-
     macKey foreach { key =>
       hmac match {
         case Some(x) => {
           if (!validate_data_mac(data, key.getClientKey(), x)) {
             log.error("MAC error on redirection: MAC validation failed")
-            log.debug("Length of data: " + data.length())
+            log.debug("Length of data: " + data.length)
             return MAC_ERROR
           }
         }
@@ -245,20 +361,67 @@ class SafeBrowsing2(storage: Storage) {
       }
     }
 
-    val parsed = DataParser.parse(data) match {
-      case DataParser.Success(c, _) => Option(c)
-      case x => log.error("Error parsing chunk data: " + x.toString()); return INTERNAL_ERROR
-    }
+//    val parsed = parseChunkData(data)
 
-    parsed.get foreach (l => {
-      l match {
-        case a: DataParser.AdHead => storage.addChunks_a(a.chunknum, a.host, a.prefix, listName)
-        case s: DataParser.SubHead => storage.addChunks_s(s.chunknum, s.host, s.pairs, listName)
-      }
-    })
+//    parsed foreach (l => {
+//      l match { //FIXME
+//        case a: AdHead => storage.addChunks_a(a.chunknum, "", List(), listName)
+//        case s: SubHead => storage.addChunks_s(s.chunknum, "", List(), listName)
+//      }
+//    })
 
     return SUCCESSFUL
   }
+
+//  def parseChunkData(data: Array[Byte]): List[ChunkData] = {
+//    val chunkData = new ListBuffer[ChunkData]()
+//    
+//    var next = Array[Byte]()
+//    val headlen = data.prefixLength(_ != '\n') + 1
+//    val (head, tail) = data.splitAt(headlen)
+//    val header = new String(head)
+//    val ctype = header.take(1)
+//    val HeadPattern = """^.:(\d+):(\d+):(\d+)\n""".r
+//    header match {
+//      case HeadPattern(cnum, hlen, dlen) => {
+//        val chunkNum = cnum.toInt
+//        val hashlen = hlen.toInt
+//        val cdata = tail.take(dlen.toInt)
+//        next = data.drop(dlen.toInt)
+//        val host = bytes2Hex(cdata.take(4))
+//        val count = cdata(5).toInt
+//        ctype match {
+//          case "a" => {
+//            val prefixes = if (count == 0) Nil else {
+//              (0 to count - 1 toList) map { i =>
+//                val start = 5 + (hashlen * i)
+//                bytes2Hex(cdata.slice(start, start + hashlen))
+//              }
+//            }
+//            chunkData += AdHead(chunkNum, host, prefixes)
+//          }
+//          case "s" => {
+//            val pairs = if (count == 0) List((bytes2Hex(cdata.slice(5, 9)), "")) else {
+//              (0 to count - 1 toList) map { i =>
+//                val start = 5 + ((hashlen + 4) * i)
+//                val prefixStart = start + 4
+//                val addchunknum = bytes2Hex(cdata.slice(start, prefixStart))
+//                val prefix = bytes2Hex(cdata.slice(prefixStart, prefixStart + hashlen))
+//                (addchunknum, prefix)
+//              }
+//            }
+//           chunkData += SubHead(chunkNum, host, pairs)
+//          }
+//        }
+//      }
+//      case _ => println("error"); None
+//    }
+//    
+//    if (next.length > 0) {
+//    	chunkData.toList ++ parseChunkData(next) 
+//    } else
+//      chunkData.toList
+//  }
 
   def getMacKeys: Option[MacKey] = {
     val keys = storage.getMacKey()
@@ -331,13 +494,13 @@ class SafeBrowsing2(storage: Storage) {
     range
   }
 
-  def validate_data_mac(data: String, key: String, digest: String): Boolean = {
+  def validate_data_mac(data: Array[Byte], key: String, digest: String): Boolean = {
     val SHA1 = "HmacSHA1";
     val keySpec = new crypto.spec.SecretKeySpec(key.getBytes(), SHA1)
     val sig = {
       val mac = crypto.Mac.getInstance(SHA1)
       mac.init(keySpec)
-      Base64.encodeBase64URLSafeString(mac.doFinal(data.getBytes()))
+      Base64.encodeBase64URLSafeString(mac.doFinal(data))
     }
     //$hash .= '=';
     log.debug("{} / {}", sig, digest)

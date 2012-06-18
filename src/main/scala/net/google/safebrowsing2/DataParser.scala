@@ -1,13 +1,12 @@
 package net.google.safebrowsing2
-import scala.util.parsing.combinator.RegexParsers
-import scala.collection.mutable
 
-object DataParser extends RegexParsers {
-  override def skipWhitespace = false
+import net.google.safebrowsing2.Helpers._
 
-  case class AdHead(chunknum: Int, hashlen: Int, data: String) {
-    val host = data.take(4)
-    val count = data.substring(4,5).toInt
+object DataParser extends BinaryParsers {
+  
+    case class AdHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
+    val host = bytes2Hex(data.take(4))
+    val count = data(4).toInt
     
     /**
      * count = 0 -> no PREFIX
@@ -18,14 +17,24 @@ object DataParser extends RegexParsers {
     val prefix:List[String] = if(count == 0) Nil else {
       (0 to count-1 toList) map { i =>
         val start = 5+(hashlen*i)
-        data.substring(start, start+hashlen)
+        bytes2Hex(data.slice(start, start+hashlen).toArray)
       }
+    }
+    
+     override def equals(that: Any): Boolean = that match {
+      case a: AdHead => {a.chunknum == chunknum && 
+        a.count == count &&
+        a.hashlen == hashlen && 
+    	a.host == host &&
+    	a.data.deepEquals(data)
+      }
+      case _ => false
     }
   }
   
-  case class SubHead(chunknum: Int, hashlen: Int, data: String) {
-    val host = data.take(4)
-    val count = data.substring(4,5).toInt
+  case class SubHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
+    val host = bytes2Hex(data.take(4))
+    val count = data(4).toInt
     
     /**
      * count = 0 -> only one ADDCHUNKNUM, no PREFIX
@@ -34,27 +43,43 @@ object DataParser extends RegexParsers {
      * ADDCHUNKNUM length = 4
      * PREFIX length = hashlen
      */
-    val pairs:List[(String,String)] = if(count == 0) List((data.substring(5,9), "")) else {
+    val pairs:List[(String,String)] = if(count == 0) List((bytes2Hex(data.slice(5,9)), "")) else {
       (0 to count-1 toList) map { i =>
         val start = 5+((hashlen+4)*i)
         val prefixStart = start + 4
-        (data.substring(start, prefixStart), data.substring(prefixStart, prefixStart+hashlen))
+        val addchunknum = bytes2Hex(data.slice(start, prefixStart))
+        val prefix = bytes2Hex(data.slice(prefixStart, prefixStart+hashlen))
+        (addchunknum, prefix)
       }
+    }
+    
+    override def equals(that: Any): Boolean = that match {
+      case s: SubHead => {s.chunknum == chunknum && 
+        s.count == count &&
+        s.hashlen == hashlen && 
+    	s.host == host &&
+    	s.data.deepEquals(data)
+      }
+      case _ => false
     }
   }
   
-  def parse(input: String) = parseAll(data, input)
+  def parse(in: String) = super.parse(data, in)
+  def parse(bytes: Seq[Byte]) = super.parse(data, new ByteReader(bytes))
   
   def data = (addHead | subHead)+
 
-  def number = """[0-9]*""".r
-  def addHead = "a:" ~> head ^^ {
-    case cnum~s1~hlen~s2~data => AdHead(cnum.toInt, hlen.toInt, data)
+  def addHead = elem('a')~clon ~> head ^^ {
+    case cnum~s1~hlen~s2~data => AdHead(asciiInt(cnum), asciiInt(hlen), data.toArray)
   }
-  def subHead = "s:" ~> head ^^ {
-    case cnum~s1~hlen~s2~data => SubHead(cnum.toInt, hlen.toInt, data)
+  def subHead = elem('s')~clon ~> head ^^ {
+    case cnum~s1~hlen~s2~data => SubHead(asciiInt(cnum), asciiInt(hlen), data.toArray)
   }
-  def head = number~":"~number~":"~chunkl
-  def chunkl = number <~ space >> {n => (".{"+n+"}").r }
-  def space = """[ \n]+""".r
+  def head = takeUntil(clon)~clon~takeUntil(clon)~clon~chunkl
+  def chunkl = takeUntil(nline)<~nline >> {
+    n => take(Integer.valueOf(toString(n))) 
+  }
+  
+  def clon = elem(':')
+  def nline = elem('\n')
 }
