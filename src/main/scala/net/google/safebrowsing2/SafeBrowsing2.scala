@@ -13,11 +13,13 @@ import com.twitter.conversions.time
 import java.net.URL
 import scala.collection.mutable
 import net.google.safebrowsing2.Helpers._
+import java.net.URI
+import model.Status
 
 object SafeBrowsing2 {
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
-  val FULL_HASH_TIME = 45 * 60
+  val FULL_HASH_TIME = 45 * 60 * 1000
   val INTERVAL_FULL_HASH_TIME = "INTERVAL 45 MINUTE"
 }
 
@@ -33,13 +35,11 @@ object Result extends Enumeration {
   val SUCCESSFUL = Value("SUCCESSFUL") // data sent
 }
 
-//abstract trait ChunkData
-//case class AdHead(chunknum: Int, host: String, prefixes: List[String]) extends ChunkData
-//case class SubHead(chunknum: Int, host: String, prefixes: List[(String, String)]) extends ChunkData
-
 import Result._
+
 class SafeBrowsing2(storage: Storage) {
 
+  val FULL_HASH_TIME = 45 * 60 * 1000
   val appver = "0.1"
   val log = LoggerFactory.getLogger(classOf[SafeBrowsing2])
   var lists = Array("googpub-phish-shavar", "goog-malware-shavar")
@@ -202,7 +202,8 @@ class SafeBrowsing2(storage: Storage) {
     hosts foreach (host => {
       log.debug("Domain for key: {} => {}", domain, host)
       val suffix = prefix(host + "/") // Don't forget trailing hash
-      log.debug("Host key: {}", bytes2Hex(suffix))
+      log.debug("Host key: {}", suffix)
+
     })
     //	foreach my $host (@hosts) {
     //		$self->debug("Domain for key: $domain => $host\n");
@@ -216,36 +217,245 @@ class SafeBrowsing2(storage: Storage) {
     //	return '';
   }
 
-  ///**
-  // * Find all canonical paths for a URL.
-  // */
-  //def canonical_path(path: String) = {
-  //
-  //	my @paths = ($path); # return full path
-  //	
-  //	if ($path =~ /\?/) {
-  //		$path =~ s/\?.*$//;
-  //
-  //		push(@paths, $path);
-  //	}
-  //
-  //	my @parts = split /\//, $path;
-  //	my $previous = '';
-  //	while (scalar @parts > 1 && scalar @paths < 6) {
-  //		my $val = shift(@parts);
-  //		$previous .= "$val/";
-  //
-  //		push(@paths, $previous);
-  //	}
-  //	
-  //	return @paths;
-  //}
+  def lookup_suffix(lists: Seq[String], url: String, suffix: String): Option[String] = {
+
+    // Calculate prefixes
+    val full_hashes = getFullHashes(url) // Get the prefixes from the first 4 bytes
+    val full_hashes_prefix = full_hashes map (h => bytes2Hex(h.take(4)))
+    // Local lookup
+
+    val add_chunks = local_lookup_suffix(url, suffix, full_hashes_prefix)
+    if (add_chunks.isEmpty) {
+      log.debug("No hit in local lookup")
+      return None
+    }
+
+    // Check against full hashes
+    add_chunks foreach (achunk => {
+      if (lists.contains(achunk.getList())) {
+        val hashes = storage.getFullHashes(achunk.getChunknum(), new Date().getTime() - FULL_HASH_TIME, achunk.getList())
+        log.debug("Full hashes already stored for chunk " + achunk.getChunknum() + ": " + hashes.length)
+
+        full_hashes foreach (h => {
+          if (hashes.find(_.equals(h)).isDefined) {
+            log.debug("Full has was found in storage")
+            return Some(achunk.getList())
+          }
+        })
+      }
+    })
+
+    //ask for new hashes
+    //TODO: make sure we don't keep asking for the same over and over
+   // val hashes = request_full_hash()
+    None
+
+    //
+    //	# 
+    //	my @hashes = $self->request_full_hash(prefixes => [ map($_->{prefix} || $_->{hostkey}, @add_chunks) ]);
+    //	$self->{storage}->add_full_hashes(full_hashes => [@hashes], timestamp => time());
+    //
+    //	foreach my $full_hash (@full_hashes) {
+    //		my $hash = first { $_->{hash} eq  $full_hash} @hashes;
+    //		next if (! defined $hash);
+    //
+    //		my $list = first { $hash->{list} eq $_ } @$lists;
+    //
+    //		if (defined $hash && defined $list) {
+    //# 			$self->debug($self->hex_to_ascii($hash->{hash}) . " eq " . $self->hex_to_ascii($full_hash) . "\n\n");
+    //
+    //			$self->debug("Match\n");
+    //
+    //			return $hash->{list};
+    //		}
+    //# 		elsif (defined $hash) {
+    //# 			$self->debug("hash: " . $self->hex_to_ascii($hash->{hash}) . "\n");
+    //# 			$self->debug("list: " . $hash->{list} . "\n");
+    //# 		}
+    //	}
+    //	
+    //	$self->debug("No match\n");
+    //	return '';
+  }
+  
+/**
+ *  Request full full hashes for specific prefixes from Google.
+ */
+def request_full_hash(prefixes: Seq[String]) = {
+  
+  def delay(status: Status, wait: Int): Boolean = {
+    new Date().getTime() - status.updateTime > wait
+  }
+	prefixes filter(prefix => {
+	  val errors = storage.getFullHashError(prefix)
+	  errors match {
+	    case None => true
+	    case Some(status) if (status.errors <= 2) => true
+	    case Some(status) if (status.errors == 3) => delay(status, 30*60) // 30 mins
+	    case Some(status) if (status.errors == 4) => delay(status, 60*60) // 1 hour
+	    case Some(status) => delay(status, 2*60*60) // 2 hours
+	  }
+	})
+
+	val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+
+	val prefix_list = prefixes.map(p => hex2Bytes(p)).reduce(_ ++ _)
+	val header = (prefixes(0).length + ":" + prefixes.size + "\n").getBytes()
+	val body = header ++ prefix_list
+//	val res = httpClient.POST(url, body, Map())
+//
+//	if (! $res->is_success) {
+//		$self->error("Full hash request failed\n");
+//		$self->debug($res->as_string . "\n");
+//
+//		foreach my $prefix (@$prefixes) {
+//			my $errors = $self->{storage}->get_full_hash_error(prefix => $prefix);
+//			if (defined $errors && (
+//				$errors->{errors} >=2 			# backoff mode
+//				|| $errors->{errors} == 1 && (time() - $errors->{timestamp}) > 5 * 60)) { # 5 minutes
+//					$self->{storage}->full_hash_error(prefix => $prefix, timestamp => time()); # more complicate than this, need to check time between 2 errors
+//			}
+//		}
+//
+//		return ();
+//	}
+//	else {
+//		$self->debug("Full hash request OK\n");
+//
+//		foreach my $prefix (@$prefixes) {
+//			$self->{storage}->full_hash_ok(prefix => $prefix, timestamp => time());
+//		}
+//	}
+//
+//	$self->debug($res->request->as_string . "\n");
+//	$self->debug($res->as_string . "\n");
+//# 	$self->debug(substr($res->content, 0, 250), "\n\n");
+//
+//	return $self->parse_full_hashes($res->content);
+}
 
   /**
-   * Return a hash prefix. The size of the prefix is set to 4 bytes.
+   * Lookup a host prefix in the local database only.
    */
-  def prefix(s: String): Array[Byte] = {
-    sha256(s).take(4)
+  def local_lookup_suffix(url: String, suffix: String,
+    fullHashPrefixes: Seq[String] = Array[String]()): Seq[Chunk] = {
+
+    // Step 1: get all add chunks for this host key
+    // Do it for all lists
+    val add_chunks = storage.getAddChunks(suffix)
+    if (add_chunks.isEmpty) { // no match
+      log.debug("No host key");
+      return add_chunks
+    }
+
+    // Step 2: calculate prefixes
+    // Get the prefixes from the first 4 bytes
+    val fullHashPrefixList = if (fullHashPrefixes.isEmpty) {
+      getFullHashes(url) map (h => bytes2Hex(h.take(4)))
+    } else {
+      fullHashPrefixes
+    }
+
+    // Step 3: filter out add_chunks not in prefix list
+    add_chunks.filter(c => fullHashPrefixList.contains(c.getPrefix()))
+
+    if (add_chunks.isEmpty) {
+      log.debug("No prefix match for any host key");
+      return add_chunks
+    }
+
+    // Step 4: get all sub chunks for this host key
+    val sub_chunks = storage.getSubChunks(suffix)
+
+    // remove all add_chunks that occur in the list of sub_chunks
+    add_chunks.filter(c => {
+      sub_chunks.find(sc =>
+        c.getChunknum() == sc.getAddChunknum() &&
+          c.getList().equals(sc.getList()) &&
+          c.getPrefix().equals(sc.getPrefix())).isEmpty
+    })
+
+    if (add_chunks.isEmpty) {
+      log.debug("All add_chunks have been removed by sub_chunks");
+    }
+
+    add_chunks
+  }
+
+  /**
+   * Return all possible full hashes for a URL.
+   */
+  def getFullHashes(url: String): Seq[Array[Byte]] = {
+    val urls = canonical(url);
+    urls map (sha256(_))
+  }
+
+  /**
+   * Find all canonical URLs for a URL.
+   */
+  def canonical(url: String): Seq[String] = {
+    val urls = new ListBuffer()
+
+    val uri = canonicalUri(url);
+    val domains = canonicalDomain(uri.getHost);
+    val paths = canonicalPath(uri.getPath);
+
+    domains foreach (d => {
+      paths foreach (p => {
+        urls ++ "%s%s".format(d, p)
+      })
+    })
+
+    return urls.toList;
+  }
+
+  /**
+   * Find all canonical paths for a URL.
+   */
+  def canonicalPath(path: String): Seq[String] = {
+
+    val paths = Array(path)
+
+    if (path.contains("?")) {
+      paths ++ path.replaceAll("""\?.*$""", "")
+    }
+
+    val parts = path.split("""\/""")
+    var previous = ""
+    breakable {
+      for (i <- 0 to parts.length) {
+        previous += parts(i) + "/"
+        paths ++ previous
+        if (paths.length >= 6) break
+      }
+    }
+    paths
+  }
+
+  /**
+   * Create a canonical URI.
+   *
+   * NOTE: URI cannot handle all the test cases provided by Google. This method is a hack to pass most of the test. A few tests are still failing. The proper way to handle URL canonicalization according to Google would be to create a new module to handle URLs. However, I believe most real-life cases are handled correctly by this function.
+   */
+  def canonicalUri(url: String): URI = {
+    var cleanurl = url.trim;
+
+    var uri = new URI(cleanurl).normalize()
+
+    if (uri.getScheme() == null || uri.getScheme().isEmpty) {
+      uri = new URI("http://" + cleanurl).normalize()
+    }
+
+    // TODO: improve canonicalization
+
+    uri
+  }
+
+  /**
+   * Return a hash prefix as a HEX string. The size of the prefix is set to 4 bytes.
+   */
+  def prefix(s: String): String = {
+    bytes2Hex(sha256(s).take(4))
   }
 
   /**
@@ -361,67 +571,20 @@ class SafeBrowsing2(storage: Storage) {
       }
     }
 
-//    val parsed = parseChunkData(data)
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => log.error("Error parsing redirect data: {}", x); return INTERNAL_ERROR
+    }
 
-//    parsed foreach (l => {
-//      l match { //FIXME
-//        case a: AdHead => storage.addChunks_a(a.chunknum, "", List(), listName)
-//        case s: SubHead => storage.addChunks_s(s.chunknum, "", List(), listName)
-//      }
-//    })
+    parsed.get foreach (l => {
+      l match {
+        case a: DataParser.AdHead => storage.addChunks_a(a.chunknum, a.host, a.prefixes, listName)
+        case s: DataParser.SubHead => storage.addChunks_s(s.chunknum, s.host, s.pairs, listName)
+      }
+    })
 
     return SUCCESSFUL
   }
-
-//  def parseChunkData(data: Array[Byte]): List[ChunkData] = {
-//    val chunkData = new ListBuffer[ChunkData]()
-//    
-//    var next = Array[Byte]()
-//    val headlen = data.prefixLength(_ != '\n') + 1
-//    val (head, tail) = data.splitAt(headlen)
-//    val header = new String(head)
-//    val ctype = header.take(1)
-//    val HeadPattern = """^.:(\d+):(\d+):(\d+)\n""".r
-//    header match {
-//      case HeadPattern(cnum, hlen, dlen) => {
-//        val chunkNum = cnum.toInt
-//        val hashlen = hlen.toInt
-//        val cdata = tail.take(dlen.toInt)
-//        next = data.drop(dlen.toInt)
-//        val host = bytes2Hex(cdata.take(4))
-//        val count = cdata(5).toInt
-//        ctype match {
-//          case "a" => {
-//            val prefixes = if (count == 0) Nil else {
-//              (0 to count - 1 toList) map { i =>
-//                val start = 5 + (hashlen * i)
-//                bytes2Hex(cdata.slice(start, start + hashlen))
-//              }
-//            }
-//            chunkData += AdHead(chunkNum, host, prefixes)
-//          }
-//          case "s" => {
-//            val pairs = if (count == 0) List((bytes2Hex(cdata.slice(5, 9)), "")) else {
-//              (0 to count - 1 toList) map { i =>
-//                val start = 5 + ((hashlen + 4) * i)
-//                val prefixStart = start + 4
-//                val addchunknum = bytes2Hex(cdata.slice(start, prefixStart))
-//                val prefix = bytes2Hex(cdata.slice(prefixStart, prefixStart + hashlen))
-//                (addchunknum, prefix)
-//              }
-//            }
-//           chunkData += SubHead(chunkNum, host, pairs)
-//          }
-//        }
-//      }
-//      case _ => println("error"); None
-//    }
-//    
-//    if (next.length > 0) {
-//    	chunkData.toList ++ parseChunkData(next) 
-//    } else
-//      chunkData.toList
-//  }
 
   def getMacKeys: Option[MacKey] = {
     val keys = storage.getMacKey()

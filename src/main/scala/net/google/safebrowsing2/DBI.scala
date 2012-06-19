@@ -213,13 +213,13 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
     }
   }
 
-  override def getAddChunks(hostkey: String): Collection[Chunk] = {
+  override def getAddChunks(hostkey: String): Seq[Chunk] = {
     queryEvaluator.select[Chunk]("SELECT * FROM a_chunks WHERE hostkey = ?", hostkey) { row =>
       new Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"))
     }
   }
 
-  override def getSubChunks(hostkey: String): Collection[Chunk] = {
+  override def getSubChunks(hostkey: String): Seq[Chunk] = {
     queryEvaluator.select[Chunk]("SELECT * FROM s_chunks WHERE hostkey = ?", hostkey) { row =>
       new Chunk(row.getInt("num"), row.getString("prefix"), row.getInt("add_num"), row.getString("list"))
     }
@@ -258,7 +258,7 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
     })
   }
 
-  override def getFullHashes(chunknum: Int, timestamp: Date, list: String): JavaList[String] = {
+  override def getFullHashes(chunknum: Int, timestamp: Long, list: String): Seq[String] = {
     val query = "SELECT hash FROM full_hashes WHERE timestamp >= ? AND num = ? AND list = ?"
 
     queryEvaluator.select[String](query, timestamp, chunknum, list) { row =>

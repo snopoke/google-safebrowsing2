@@ -10,7 +10,7 @@ import net.google.safebrowsing2.Helpers._
 import com.google.common.io.ByteStreams
 
 trait ParsersUtil extends Parsers {
-  lazy val anyElem: Parser[Elem] = elem("anyElem", _ => true)
+  lazy val anyElem: Parser[Elem] = elem("anyElem", _ != -1)
   def elemExcept(xs: Elem*): Parser[Elem] = elem("elemExcept", x => !(xs contains x))
   def elemOf(xs: Elem*): Parser[Elem] = elem("elemOf", xs contains _)
 
@@ -33,7 +33,7 @@ class ByteReader(val bytes: Array[Byte], override val offset: Int) extends Reade
 
   override def source = bytes map (_.toChar)
 
-  def first: Byte = if (offset < bytes.length) bytes(offset) else EofCh.toByte
+  def first: Byte = if (offset < bytes.length) bytes(offset) else -1
   def rest: ByteReader = if (offset < bytes.length) new ByteReader(bytes, offset + 1) else this
   def pos: Position = ByteOffsetPosition(offset)
   def atEnd = offset >= bytes.length
@@ -72,7 +72,13 @@ trait BinaryParsers extends Parsers with ParsersUtil {
     if (n <= in.length) Success(in take n, in drop n)
     else Failure("Requested %d bytes but only %d remain".format(n, in.length), in)
   }
+  
+  override def phrase[T](p: Parser[T]): Parser[T] =
+    super.phrase(p <~ opt(elem(EofCh)))
 
+  /** Parse all of character sequence `in` with parser `p`. */
+  def parseAll[T](p: Parser[T], in: Input): ParseResult[T] =
+    parse(phrase(p), in)
   def parse[T](p: Parser[T], in: Input): ParseResult[T] = p(in)
-  def parse[T](p: Parser[T], in: String): ParseResult[T] = parse(p, new ByteReader(in))
+  def parseAll[T](p: Parser[T], in: String): ParseResult[T] = parseAll(p, new ByteReader(in))
 }

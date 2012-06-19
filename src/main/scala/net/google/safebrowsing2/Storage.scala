@@ -14,9 +14,9 @@ trait Storage {
 
   def addChunks_a(chunknum: Int, hostkey: String, prefixes: List[String], list: String)
 
-  def getAddChunks(hostkey: String): Collection[Chunk]
+  def getAddChunks(hostkey: String): Seq[Chunk]
 
-  def getSubChunks(hostkey: String): Collection[Chunk]
+  def getSubChunks(hostkey: String): Seq[Chunk]
 
   def getAddChunksNums(list: String): Seq[Int]
 
@@ -26,7 +26,7 @@ trait Storage {
 
   def deleteSubChunks(chunknums: Seq[Int], list: String)
 
-  def getFullHashes(chunknum: Int, timestamp: Date, list: String): JavaList[String]
+  def getFullHashes(chunknum: Int, timestamp: Long, list: String): Seq[String]
 
   def updated(time: Date, wait: Int, list: String)
 
