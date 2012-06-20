@@ -6,7 +6,7 @@ import scala.util.parsing.input.CharArrayReader.EofCh
 import scala.annotation.tailrec
 import java.lang.Float.intBitsToFloat
 import java.lang.Double.longBitsToDouble
-import net.google.safebrowsing2.Helpers._
+import util.Helpers._
 import com.google.common.io.ByteStreams
 
 trait ParsersUtil extends Parsers {

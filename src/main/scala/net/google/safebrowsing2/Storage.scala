@@ -34,7 +34,7 @@ trait Storage {
 
   def lastUpdate(list: String): Status
 
-  def addFullHashes(timestamp: Date, full_hashes: Collection[Hash])
+  def addFullHashes(timestamp: Date, full_hashes: Seq[Hash])
 
   def deleteFullHashes(chunknums: Seq[Int], list: String)
 

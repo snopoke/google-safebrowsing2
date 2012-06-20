@@ -17,7 +17,7 @@ class DataParserTests {
     		"s:3:2:17\n" +
     		"45sd24567MN1234PQ"
     val parsed = DataParser.parse(data) match {
-      case DataParser.Success(c, _) => Option(c)
+      case DataParser.Success(c, rest) => Option(c)
       case x => println(x); None
     }
     
@@ -45,7 +45,7 @@ class DataParserTests {
     val add = parsed.get(0).asInstanceOf[AdHead]
     assertThat(add.host, is("090A0B0C"))
     assertThat(add.count, is(0))
-    assertThat(add.prefix, is(Nil:List[String]))
+    assertThat(add.prefixes, is(Nil:List[String]))
   }  
   
   @Test
@@ -64,7 +64,7 @@ class DataParserTests {
     val add = parsed.get(0).asInstanceOf[AdHead]
     assertThat(add.host, is("090A0B0C"))
     assertThat(add.count, is(2))
-    assertThat(add.prefix, is(List("0304","0506")))
+    assertThat(add.prefixes, is(List("0304","0506")))
   }
   
   @Test

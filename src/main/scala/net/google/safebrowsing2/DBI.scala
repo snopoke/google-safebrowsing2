@@ -1,5 +1,4 @@
 package net.google.safebrowsing2
-import java.util.Collection
 import java.util.Date
 import java.util.{ List => JavaList }
 import com.twitter.querulous.evaluator.QueryEvaluator
@@ -12,6 +11,7 @@ import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
 import com.twitter.querulous.evaluator.ParamsApplier
 import com.twitter.querulous.query.QueryClass
+import net.google.safebrowsing2.model._
 
 abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
 
@@ -215,13 +215,13 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
 
   override def getAddChunks(hostkey: String): Seq[Chunk] = {
     queryEvaluator.select[Chunk]("SELECT * FROM a_chunks WHERE hostkey = ?", hostkey) { row =>
-      new Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"))
+      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), -1)
     }
   }
 
   override def getSubChunks(hostkey: String): Seq[Chunk] = {
     queryEvaluator.select[Chunk]("SELECT * FROM s_chunks WHERE hostkey = ?", hostkey) { row =>
-      new Chunk(row.getInt("num"), row.getString("prefix"), row.getInt("add_num"), row.getString("list"))
+      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), row.getInt("add_num"))
     }
   }
 
@@ -285,18 +285,18 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
   override def lastUpdate(list: String): Status = {
     queryEvaluator.selectOne[Status]("SELECT last, wait, errors FROM updates WHERE list = ? LIMIT 1", list) { row =>
       val time = Option(row.getInt("last")).getOrElse(0)
-      val wait = Option(row.getInt("wait")).getOrElse(1800)
+      val wait = Option(row.getInt("wait")).getOrElse(1800) // 30 minutes default
       val errors = Option(row.getInt("errors")).getOrElse(0)
-      new Status(time, wait, errors)
+      Status(time, wait, errors)
     } getOrElse {
-      new Status(0, 1800, 0)
+      Status(0, 0, 0)
     }
   }
 
-  override def addFullHashes(timestamp: Date, full_hashes: Collection[Hash]) = {
+  override def addFullHashes(timestamp: Date, full_hashes: Seq[Hash]) = {
     full_hashes foreach (hash => {
-      queryEvaluator.execute("DELETE FROM full_hashes WHERE num = ? AND hash = ? AND list = ?", hash.getChunknum(), hash.getHash(), hash.getList())
-      queryEvaluator.insert("INSERT INTO full_hashes (num, hash, list, timestamp) VALUES (?, ?, ?, ?)", hash.getChunknum(), hash.getHash(), hash.getList(), timestamp)
+      queryEvaluator.execute("DELETE FROM full_hashes WHERE num = ? AND hash = ? AND list = ?", hash.chunknum, hash.hash, hash.list)
+      queryEvaluator.insert("INSERT INTO full_hashes (num, hash, list, timestamp) VALUES (?, ?, ?, ?)", hash.chunknum, hash.hash, hash.list, timestamp)
     })
   }
 
@@ -340,14 +340,14 @@ abstract class DBI(queryEvaluator: QueryEvaluator) extends Storage {
 
   override def getMacKey(): Option[MacKey] = {
     queryEvaluator.selectOne("SELECT client_key, wrapped_key FROM mac_keys LIMIT 1") { row =>
-      new MacKey(row.getString("client_key"), row.getString("wrapped_key"))
+      MacKey(row.getString("client_key"), row.getString("wrapped_key"))
     }
   }
 
   override def addMacKey(key: MacKey) = {
     delete_mac_keys();
 
-    queryEvaluator.insert("INSERT INTO mac_keys (client_key, wrapped_key) VALUES (?, ?)", key.getClientKey(), key.getWrappedKey())
+    queryEvaluator.insert("INSERT INTO mac_keys (client_key, wrapped_key) VALUES (?, ?)", key.clientKey, key.wrappedKey)
   }
 
   override def delete_mac_keys() = {

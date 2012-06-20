@@ -1,13 +1,13 @@
 package net.google.safebrowsing2
 
-import net.google.safebrowsing2.Helpers._
+import util.Helpers._
 import scala.collection.mutable.ListBuffer
 import scala.annotation.tailrec
 
 object FullHashParser extends BinaryParsers {
   
   case class Envelope(rekey: Boolean, mac: Option[String], hashdata: Seq[FullHashData])
-  case class FullHashData(list: String, addChunk: String, hashdata: Seq[Byte]) {
+  case class FullHashData(list: String, addChunknum: Int, hashdata: Seq[Byte]) {
     lazy val hashes = {
       val list = new ListBuffer[String]
       @tailrec def slice(data: Seq[Byte]): Seq[String] = {
@@ -42,7 +42,7 @@ object FullHashParser extends BinaryParsers {
   }
   def rekey = accept("e:pleaserekey".getBytes.toList) <~ lf ^^ {_ => "rekey"}
   def hashentry = takeUntil(colon)~colon~takeUntil(colon)~colon~hashdata ^^ {
-    case list~c1~addchunk~c2~hashdata => FullHashData(toString(list), toString(addchunk), hashdata)
+    case list~c1~addchunk~c2~hashdata => FullHashData(toString(list), asciiInt(addchunk), hashdata)
   }
   def hashdata = takeUntil(lf)<~lf >> {
     n => take(Integer.valueOf(toString(n))) 

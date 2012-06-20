@@ -1,24 +1,22 @@
 package net.google.safebrowsing2
-import java.util.Date
-import org.slf4j.LoggerFactory
-import net.google.safebrowsing2.model.MacKey
-import org.apache.commons.codec.binary.Base64
-import scala.collection.mutable.ListBuffer
-import java.net.URLEncoder
-import javax.crypto
-import net.google.safebrowsing2.model.Chunk
-import com.github.tototoshi.http.Client
-import scala.util.control.Breaks._
-import com.twitter.conversions.time
-import java.net.URL
-import scala.collection.mutable
-import net.google.safebrowsing2.Helpers._
 import java.net.URI
+import java.net.URL
+import java.util.Date
+import scala.collection.mutable.ListBuffer
+import scala.collection.mutable
+import scala.util.control.Breaks._
+import org.apache.commons.codec.binary.Base64
+import org.slf4j.LoggerFactory
+import com.buildabrand.gsb.util.URLUtils
+import com.github.tototoshi.http.Client
 import model.Status
+import net.google.safebrowsing2.model._
+import util.Helpers._
+import org.joda.time.DateTime
+import util.Logging
 
 object SafeBrowsing2 {
-  val MALWARE = "goog-malware-shavar"
-  val PHISHING = "googpub-phish-shavar"
+
   val FULL_HASH_TIME = 45 * 60 * 1000
   val INTERVAL_FULL_HASH_TIME = "INTERVAL 45 MINUTE"
 }
@@ -37,46 +35,44 @@ object Result extends Enumeration {
 
 import Result._
 
-class SafeBrowsing2(storage: Storage) {
+class SafeBrowsing2(storage: DBI) extends Logging {
 
+  val MALWARE = "goog-malware-shavar"
+  val PHISHING = "googpub-phish-shavar"
   val FULL_HASH_TIME = 45 * 60 * 1000
   val appver = "0.1"
-  val log = LoggerFactory.getLogger(classOf[SafeBrowsing2])
-  var lists = Array("googpub-phish-shavar", "goog-malware-shavar")
+  val lists = Array(MALWARE, PHISHING)
   var apikey = ""
   var pver = "2.2"
-  var debug = 0
-  var errors = 0
-  var last_error = ""
-  var macKey: Option[MacKey] = None
-  var httpClient = new Client
+  var httpClient: Client = new Client
 
   def update(listName: String, force: Boolean = false, withMac: Boolean = false): Result = {
 
-    val candidates: Array[String] = if (!listName.isEmpty()) {
+    val candidates: Array[String] = if (listName == null || !listName.isEmpty()) {
       Array(listName)
     } else {
       lists
     }
 
+    val now = new Date()
+    // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
       val info = storage.lastUpdate(listName)
-      val tooEarly = info.waitDate.compareTo(new Date()) > 1 && !force
+      val tooEarly = !force && info.waitUntil.after(now)
       if (tooEarly) {
-        log.debug("Too early to update {}\n", listName)
+        logger.debug("Too early to update {}", listName)
       } else {
-        log.debug("OK to update {}: {} / {}", Array(listName, new Date(), info.waitDate))
+        logger.debug("OK to update {}: {} / {}", Array(listName, now, info.waitUntil))
       }
       !tooEarly
     })
 
     if (toUpdate.isEmpty) {
-      log.debug("Too early to update any list");
+      logger.debug("Too early to update any list");
       return NO_UPDATE;
     }
 
-    val client_key = ""
-    val wrapped_key = ""
+    var macKey: Option[MacKey] = None
     if (withMac) {
       macKey = getMacKeys orElse {
         return MAC_KEY_ERROR;
@@ -92,41 +88,41 @@ class SafeBrowsing2(storage: Storage) {
     val response = httpClient.POST(postUrl, body)
 
     val responseData = response.asString
-    log.debug(responseData)
+    logger.debug("RFD response for lists: {}\n{}", toUpdate.mkString(","), responseData)
     response.statusCode() match {
       case 200 => {}
       case other => {
-        log.error("Request failed")
-        toUpdate.foreach(list => storage.updateError(new Date(), list))
+        logger.error("Request failed")
+        toUpdate.foreach(list => storage.updateError(now, list))
         return SERVER_ERROR
       }
     }
 
     val parseResult = RFDResponseParser.parse(responseData) match {
       case RFDResponseParser.Success(resp, _) => Option(resp)
-      case x => log.error("Error parsing RFD response: " + x); return INTERNAL_ERROR
+      case x => logger.error("Error parsing RFD response: " + x); return INTERNAL_ERROR
     }
 
     val resp = parseResult.get
-    resp.mac foreach (m =>
-      m match {
-        case "rekey" => {
-          log.debug("Re-key requested")
-          storage.delete_mac_keys()
-          return update(listName, force, withMac)
-        }
-        case _ => {
-          log.debug("MAC of request: {}", m)
-          val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
-          if (!validate_data_mac(data.getBytes(), macKey.get.getClientKey(), m)) {
-            log.error("MAC error on main request")
-            return MAC_ERROR
-          }
+    if (resp.rekey) {
+      logger.debug("Re-key requested")
+      storage.delete_mac_keys()
+      return update(listName, force, withMac)
+    }
+
+    resp.mac.foreach(dataMac => {
+      macKey.foreach(ourMac => {
+        logger.debug("MAC of request: {}", dataMac)
+        val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
+        if (!validateMac(data.getBytes(), ourMac.clientKey, dataMac)) {
+          logger.error("MAC error on main request")
+          return MAC_ERROR
         }
       })
+    })
 
-    resp.reset foreach {
-      log.debug("Database must be reset")
+    if (resp.reset) {
+      logger.debug("Database must be reset")
       toUpdate foreach (l => storage.reset(l))
       return DATABASE_RESET
     }
@@ -135,10 +131,10 @@ class SafeBrowsing2(storage: Storage) {
     breakable {
       resp.list foreach (list => {
         list foreach (chunklist => {
-          val a = chunklist.data map (d => {
+          chunklist.data foreach (d => {
             d match {
               case RFDResponseParser.Redirect(url, mac) => {
-                result = processRedirect(url, mac, chunklist.name)
+                result = processRedirect(url, mac, chunklist.name, macKey)
                 if (result != SUCCESSFUL) break
               }
               case RFDResponseParser.AdDel(adlist) => {
@@ -158,209 +154,188 @@ class SafeBrowsing2(storage: Storage) {
     toUpdate foreach (list => {
       result match {
         case SUCCESSFUL => {
-          log.debug("List update: [list={}] [wait={}]", list, resp.next)
-          storage.updated(new Date(), resp.next, list)
+          logger.debug("List update: [list={}] [wait={}]", list, resp.next)
+          storage.updated(now, resp.next, list)
         }
         case MAC_ERROR => {}
         case other => {
-          log.error("Error updating list: " + list + ", error: " + other)
-          storage.updateError(new Date(), list)
+          logger.error("Error updating list: " + list + ", error: " + other)
+          storage.updateError(now, list)
         }
       }
     })
-    if (result == SUCCESSFUL) {
-      toUpdate foreach (list => {
 
-      })
-    } else {
-
-    }
-
-    return SUCCESSFUL
+    return result
   }
 
   /**
    * Lookup a URL against the Google Safe Browsing database.
+   *
    * @param url
    * @param listName Optional. Lookup against a specific list. Use the list(s) from new() by default.
-   * @returns Returns the name of the list if there is any match, returns an empty string otherwise.
+   * @returns Returns Option(list name) with matching list or None.
    */
-  def lookup(url: String, listName: String = "") = {
+  def lookup(url: String, listName: String = ""): Option[String] = {
     val candidates: Array[String] = if (!listName.isEmpty()) {
       Array(listName)
     } else {
       lists
     }
 
-    // TODO: create our own URI management for canonicalization
-    // fix for http:///foo.com (3 ///)
-    var cleanurl = url.replaceAll("""(https?:\/\/)\/+""", "$1")
+    var cleanurl = URLUtils.getInstance().canonicalizeURL(url)
     val uri = new URL(cleanurl)
     val domain = uri.getHost()
     val hosts = canonicalDomainSuffixes(domain) // only top-2 in this case
 
     hosts foreach (host => {
-      log.debug("Domain for key: {} => {}", domain, host)
-      val suffix = prefix(host + "/") // Don't forget trailing hash
-      log.debug("Host key: {}", suffix)
-
+      logger.debug("Domain for key: {} => {}", domain, host)
+      val suffix = hashPrefix(host + "/") // Don't forget trailing slash
+      logger.debug("Host key: {}", suffix)
+      val listMatch = lookup_suffix(candidates, url, suffix)
+      if (listMatch.isDefined)
+        return listMatch
     })
-    //	foreach my $host (@hosts) {
-    //		$self->debug("Domain for key: $domain => $host\n");
-    //		my $suffix = $self->prefix("$host/"); # Don't forget trailing hash
-    //		$self->debug("Host key: " . $self->hex_to_ascii($suffix) . "\n");
-    //
-    //		my $match = $self->lookup_suffix(lists => [@lists], url => $url, suffix => $suffix);
-    //		return $match if ($match ne '');
-    //	}
-    //
-    //	return '';
+
+    None
   }
 
   def lookup_suffix(lists: Seq[String], url: String, suffix: String): Option[String] = {
 
-    // Calculate prefixes
-    val full_hashes = getFullHashes(url) // Get the prefixes from the first 4 bytes
-    val full_hashes_prefix = full_hashes map (h => bytes2Hex(h.take(4)))
-    // Local lookup
+    val full_hashes = getFullHashes(url)
 
-    val add_chunks = local_lookup_suffix(url, suffix, full_hashes_prefix)
+    // Get the prefixes from the first 4 bytes (8 chars)
+    val full_hashes_prefix = full_hashes map (h => h.substring(0, 8))
+
+    // Local lookup
+    val add_chunks = local_lookup_suffix(suffix, full_hashes_prefix)
     if (add_chunks.isEmpty) {
-      log.debug("No hit in local lookup")
+      logger.debug("No hit in local lookup")
       return None
     }
 
     // Check against full hashes
+    val hashesInStore = new ListBuffer[String]()
     add_chunks foreach (achunk => {
-      if (lists.contains(achunk.getList())) {
-        val hashes = storage.getFullHashes(achunk.getChunknum(), new Date().getTime() - FULL_HASH_TIME, achunk.getList())
-        log.debug("Full hashes already stored for chunk " + achunk.getChunknum() + ": " + hashes.length)
+      if (lists.contains(achunk.list)) {
+        val hashes = storage.getFullHashes(achunk.chunknum, new Date().getTime() - FULL_HASH_TIME, achunk.list)
+        logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
+        hashesInStore ++= hashes
 
         full_hashes foreach (h => {
           if (hashes.find(_.equals(h)).isDefined) {
-            log.debug("Full has was found in storage")
-            return Some(achunk.getList())
+            logger.debug("Full hash was found in storage")
+            return Some(achunk.list)
           }
         })
       }
     })
 
+    // remove hashes that we already have (and which haven't expired
+    full_hashes.filter(h => hashesInStore.find(_.equals(h)).isEmpty)
+
     //ask for new hashes
-    //TODO: make sure we don't keep asking for the same over and over
-   // val hashes = request_full_hash()
+    val hashes = request_full_hash(full_hashes_prefix)
+    storage.addFullHashes(new Date(), hashes)
+
+    full_hashes foreach (fhash => {
+      val hash = hashes.find(h => h.hash.equals(fhash))
+      val list = hash.flatMap(h => lists.find(l => h.list.equals(l)))
+      if (hash.isDefined && list.isDefined) {
+        logger.debug("Match")
+        return list
+      }
+    })
     None
-
-    //
-    //	# 
-    //	my @hashes = $self->request_full_hash(prefixes => [ map($_->{prefix} || $_->{hostkey}, @add_chunks) ]);
-    //	$self->{storage}->add_full_hashes(full_hashes => [@hashes], timestamp => time());
-    //
-    //	foreach my $full_hash (@full_hashes) {
-    //		my $hash = first { $_->{hash} eq  $full_hash} @hashes;
-    //		next if (! defined $hash);
-    //
-    //		my $list = first { $hash->{list} eq $_ } @$lists;
-    //
-    //		if (defined $hash && defined $list) {
-    //# 			$self->debug($self->hex_to_ascii($hash->{hash}) . " eq " . $self->hex_to_ascii($full_hash) . "\n\n");
-    //
-    //			$self->debug("Match\n");
-    //
-    //			return $hash->{list};
-    //		}
-    //# 		elsif (defined $hash) {
-    //# 			$self->debug("hash: " . $self->hex_to_ascii($hash->{hash}) . "\n");
-    //# 			$self->debug("list: " . $hash->{list} . "\n");
-    //# 		}
-    //	}
-    //	
-    //	$self->debug("No match\n");
-    //	return '';
   }
-  
-/**
- *  Request full full hashes for specific prefixes from Google.
- */
-def request_full_hash(prefixes: Seq[String]) = {
-  
-  def delay(status: Status, wait: Int): Boolean = {
-    new Date().getTime() - status.updateTime > wait
+
+  /**
+   *  Request full full hashes for specific prefixes from Google.
+   */
+  def request_full_hash(prefixes: Seq[String]): Seq[Hash] = {
+
+    /**
+     * Return true if the wait time has passed or false otherwise
+     */
+    def delay(status: Status, wait: Int): Boolean = {
+      new Date().getTime() - status.updateTime > wait
+    }
+
+    prefixes filter (prefix => {
+      val errors = storage.getFullHashError(prefix)
+      errors match {
+        case None => true
+        case Some(status) if (status.errors <= 2) => true
+        case Some(status) if (status.errors == 3) => delay(status, 30 * 60) // 30 mins
+        case Some(status) if (status.errors == 4) => delay(status, 60 * 60) // 1 hour
+        case Some(status) => delay(status, 2 * 60 * 60) // 2 hours
+      }
+    })
+
+    val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+
+    val prefix_list = prefixes.map(p => hex2Bytes(p)).reduce(_ ++ _)
+    val header = (prefixes(0).length + ":" + prefixes.size + "\n").getBytes()
+    val body = header ++ prefix_list
+    val res = httpClient.POST(url, body, Map())
+    val responseData = res.asBytes()
+    res.statusCode() match {
+      case 200 => {
+        prefixes.foreach(prefix => storage.fullHashOK(new Date(), prefix))
+        parseFullHashes(responseData)
+      }
+      case other => {
+        logger.error("Full hash request failed: {}", other)
+        prefixes foreach (p => {
+          val error = storage.getFullHashError(p)
+          // ?? is this correct?
+          error foreach (status => {
+            if (status.errors >= 2 || (status.errors == 1 && new Date().getTime() - status.updateTime > 5 * 60 * 1000)) {
+              storage.fullHashError(new Date(), p)
+            }
+          })
+        })
+        Nil
+      }
+    }
   }
-	prefixes filter(prefix => {
-	  val errors = storage.getFullHashError(prefix)
-	  errors match {
-	    case None => true
-	    case Some(status) if (status.errors <= 2) => true
-	    case Some(status) if (status.errors == 3) => delay(status, 30*60) // 30 mins
-	    case Some(status) if (status.errors == 4) => delay(status, 60*60) // 1 hour
-	    case Some(status) => delay(status, 2*60*60) // 2 hours
-	  }
-	})
 
-	val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+  def parseFullHashes(data: Array[Byte]): Seq[Hash] = {
+    val parsed = FullHashParser.parse(data) match {
+      case FullHashParser.Success(c, _) => Option(c)
+      case x => logger.error("Error parsing full hash data: {}", x); return Nil
+    }
 
-	val prefix_list = prefixes.map(p => hex2Bytes(p)).reduce(_ ++ _)
-	val header = (prefixes(0).length + ":" + prefixes.size + "\n").getBytes()
-	val body = header ++ prefix_list
-//	val res = httpClient.POST(url, body, Map())
-//
-//	if (! $res->is_success) {
-//		$self->error("Full hash request failed\n");
-//		$self->debug($res->as_string . "\n");
-//
-//		foreach my $prefix (@$prefixes) {
-//			my $errors = $self->{storage}->get_full_hash_error(prefix => $prefix);
-//			if (defined $errors && (
-//				$errors->{errors} >=2 			# backoff mode
-//				|| $errors->{errors} == 1 && (time() - $errors->{timestamp}) > 5 * 60)) { # 5 minutes
-//					$self->{storage}->full_hash_error(prefix => $prefix, timestamp => time()); # more complicate than this, need to check time between 2 errors
-//			}
-//		}
-//
-//		return ();
-//	}
-//	else {
-//		$self->debug("Full hash request OK\n");
-//
-//		foreach my $prefix (@$prefixes) {
-//			$self->{storage}->full_hash_ok(prefix => $prefix, timestamp => time());
-//		}
-//	}
-//
-//	$self->debug($res->request->as_string . "\n");
-//	$self->debug($res->as_string . "\n");
-//# 	$self->debug(substr($res->content, 0, 250), "\n\n");
-//
-//	return $self->parse_full_hashes($res->content);
-}
+    val hashes = parsed.map(env => {
+      if (env.rekey) { /* ignore for now */ }
+      env.mac.foreach(mac => {
+        // TODO check mac 
+      })
+
+      env.hashdata.map(full => {
+        full.hashes.map(h => Hash(full.addChunknum, h, full.list))
+      }).reduce(_ ++ _)
+    })
+    hashes.getOrElse(Nil)
+  }
 
   /**
    * Lookup a host prefix in the local database only.
    */
-  def local_lookup_suffix(url: String, suffix: String,
-    fullHashPrefixes: Seq[String] = Array[String]()): Seq[Chunk] = {
+  def local_lookup_suffix(suffix: String, fullHashPrefixes: Seq[String]): Seq[Chunk] = {
 
     // Step 1: get all add chunks for this host key
     // Do it for all lists
-    val add_chunks = storage.getAddChunks(suffix)
+    var add_chunks = storage.getAddChunks(suffix)
     if (add_chunks.isEmpty) { // no match
-      log.debug("No host key");
+      logger.debug("No host key");
       return add_chunks
     }
 
-    // Step 2: calculate prefixes
-    // Get the prefixes from the first 4 bytes
-    val fullHashPrefixList = if (fullHashPrefixes.isEmpty) {
-      getFullHashes(url) map (h => bytes2Hex(h.take(4)))
-    } else {
-      fullHashPrefixes
-    }
-
     // Step 3: filter out add_chunks not in prefix list
-    add_chunks.filter(c => fullHashPrefixList.contains(c.getPrefix()))
+    add_chunks = add_chunks.filter(c => fullHashPrefixes.contains(c.prefix))
 
     if (add_chunks.isEmpty) {
-      log.debug("No prefix match for any host key");
+      logger.debug("No prefix match for any host key");
       return add_chunks
     }
 
@@ -368,15 +343,15 @@ def request_full_hash(prefixes: Seq[String]) = {
     val sub_chunks = storage.getSubChunks(suffix)
 
     // remove all add_chunks that occur in the list of sub_chunks
-    add_chunks.filter(c => {
+    add_chunks = add_chunks.filter(c => {
       sub_chunks.find(sc =>
-        c.getChunknum() == sc.getAddChunknum() &&
-          c.getList().equals(sc.getList()) &&
-          c.getPrefix().equals(sc.getPrefix())).isEmpty
+        c.chunknum == sc.addChunknum &&
+          c.list.equals(sc.list) &&
+          c.prefix.equals(sc.prefix)).isEmpty
     })
 
     if (add_chunks.isEmpty) {
-      log.debug("All add_chunks have been removed by sub_chunks");
+      logger.debug("All add_chunks have been removed by sub_chunks");
     }
 
     add_chunks
@@ -385,24 +360,29 @@ def request_full_hash(prefixes: Seq[String]) = {
   /**
    * Return all possible full hashes for a URL.
    */
-  def getFullHashes(url: String): Seq[Array[Byte]] = {
+  def getFullHashes(url: String): Seq[String] = {
     val urls = canonical(url);
-    urls map (sha256(_))
+    urls map (u => bytes2Hex(sha256(u)))
   }
 
   /**
    * Find all canonical URLs for a URL.
    */
   def canonical(url: String): Seq[String] = {
-    val urls = new ListBuffer()
+    val urls = new ListBuffer[String]()
 
-    val uri = canonicalUri(url);
+    val uri = new URI(URLUtils.getInstance().canonicalizeURL(url));
     val domains = canonicalDomain(uri.getHost);
-    val paths = canonicalPath(uri.getPath);
+    
+    var path = uri.getPath
+    if(uri.getQuery != null) 
+      path += "?" + uri.getQuery
+      
+    val paths = canonicalPath(path);
 
     domains foreach (d => {
       paths foreach (p => {
-        urls ++ "%s%s".format(d, p)
+        urls += "%s%s".format(d, p)
       })
     })
 
@@ -414,18 +394,18 @@ def request_full_hash(prefixes: Seq[String]) = {
    */
   def canonicalPath(path: String): Seq[String] = {
 
-    val paths = Array(path)
+    val paths = mutable.MutableList[String](path)
 
     if (path.contains("?")) {
-      paths ++ path.replaceAll("""\?.*$""", "")
+      paths += path.replaceAll("""\?.*$""", "")
     }
 
-    val parts = path.split("""\/""")
+    val parts = path.split("""\/""").dropRight(1)
     var previous = ""
     breakable {
-      for (i <- 0 to parts.length) {
+      for (i <- 0 until parts.length) {
         previous += parts(i) + "/"
-        paths ++ previous
+        paths += previous
         if (paths.length >= 6) break
       }
     }
@@ -433,50 +413,32 @@ def request_full_hash(prefixes: Seq[String]) = {
   }
 
   /**
-   * Create a canonical URI.
-   *
-   * NOTE: URI cannot handle all the test cases provided by Google. This method is a hack to pass most of the test. A few tests are still failing. The proper way to handle URL canonicalization according to Google would be to create a new module to handle URLs. However, I believe most real-life cases are handled correctly by this function.
-   */
-  def canonicalUri(url: String): URI = {
-    var cleanurl = url.trim;
-
-    var uri = new URI(cleanurl).normalize()
-
-    if (uri.getScheme() == null || uri.getScheme().isEmpty) {
-      uri = new URI("http://" + cleanurl).normalize()
-    }
-
-    // TODO: improve canonicalization
-
-    uri
-  }
-
-  /**
    * Return a hash prefix as a HEX string. The size of the prefix is set to 4 bytes.
    */
-  def prefix(s: String): String = {
+  def hashPrefix(s: String): String = {
     bytes2Hex(sha256(s).take(4))
   }
 
   /**
-   * Find all canonical domains a domain.
+   * Find all canonical domains for a domain.
    */
   def canonicalDomain(domain: String): Seq[String] = {
 
     if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
-      return Array(domain);
+      return Seq(domain);
     }
 
-    val domains = mutable.MutableList[String]()
     var parts = domain.split("""\.""")
-    parts = parts.takeRight(6)
-    while (parts.length > 2) {
+    parts = parts.takeRight(Math.min(5, parts.length - 1))
+    
+    val domains = mutable.MutableList[String](domain)
+    while (parts.length >= 2) {
       domains += parts.mkString(".")
       parts = parts.drop(1)
     }
 
-    domains
+    domains.seq
   }
 
   /**
@@ -528,7 +490,7 @@ def request_full_hash(prefixes: Seq[String]) = {
   }
 
   def processDelAd(nums: List[Int], list: String): Result = {
-    log.debug("Delete Add Chunks: {}", nums)
+    logger.debug("Delete Add Chunks: {}", nums)
     storage.deleteAddChunks(nums, list)
 
     // Delete full hash as well
@@ -537,20 +499,20 @@ def request_full_hash(prefixes: Seq[String]) = {
   }
 
   def processDelSub(nums: List[Int], list: String): Result = {
-    log.debug("Delete Sub Chunks: {}", nums)
+    logger.debug("Delete Sub Chunks: {}", nums)
     storage.deleteSubChunks(nums, list)
     return SUCCESSFUL
   }
 
-  def processRedirect(url: String, hmac: Option[String], listName: String): Result = {
-    log.debug("Checking redirection http://{} ({})", url, listName)
+  def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]): Result = {
+    logger.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
 
     val data = res.asBytes()
     res.statusCode() match {
       case 200 => {}
       case other => {
-        log.error("Request to {} failed: {}", url, other)
+        logger.error("Request to {} failed: {}", url, other)
         return SERVER_ERROR
       }
     }
@@ -558,14 +520,14 @@ def request_full_hash(prefixes: Seq[String]) = {
     macKey foreach { key =>
       hmac match {
         case Some(x) => {
-          if (!validate_data_mac(data, key.getClientKey(), x)) {
-            log.error("MAC error on redirection: MAC validation failed")
-            log.debug("Length of data: " + data.length)
+          if (!validateMac(data, key.clientKey, x)) {
+            logger.error("MAC error on redirection: MAC validation failed")
+            logger.debug("Length of data: " + data.length)
             return MAC_ERROR
           }
         }
         case _ => {
-          log.error("MAC error on redirection: redirect MAC empty")
+          logger.error("MAC error on redirection: redirect MAC empty")
           return MAC_ERROR
         }
       }
@@ -573,7 +535,7 @@ def request_full_hash(prefixes: Seq[String]) = {
 
     val parsed = DataParser.parse(data) match {
       case DataParser.Success(c, _) => Option(c)
-      case x => log.error("Error parsing redirect data: {}", x); return INTERNAL_ERROR
+      case x => logger.error("Error parsing redirect data: {}", x); return INTERNAL_ERROR
     }
 
     parsed.get foreach (l => {
@@ -609,27 +571,28 @@ def request_full_hash(prefixes: Seq[String]) = {
     val body = resp.asString()
     resp.statusCode() match {
       case 200 => processMacResponse(body)
-      case other => println("Key request failed: {}" + other); None
+      case other => logger.error("Key request failed: {}" + other); None
     }
   }
 
   def processMacResponse(res: String): Option[MacKey] = {
     val Client = "^clientkey:(\\d+):(.*)$".r
     val Wrapped = "^wrappedkey:(\\d+):(.*)$".r
-    val key = new MacKey
+    var clientkey = ""
+    var wrappedkey = ""
     res.split("\n").foreach(line => {
       line match {
         case Client(len, ckey) => {
           assert(ckey.length() == len.toInt, "Client key is not expected length")
-          key.setClientKey(ckey)
+          clientkey = ckey
         }
         case Wrapped(len, wkey) => {
           assert(wkey.length() == len.toInt, "Wrapped key is not expected length")
-          key.setWrappedKey(wkey)
+          wrappedkey = wkey
         }
       }
     })
-    Some(key)
+    Some(MacKey(clientkey, wrappedkey))
   }
 
   def createRange(numbers: Seq[Int]): String = {
@@ -657,16 +620,9 @@ def request_full_hash(prefixes: Seq[String]) = {
     range
   }
 
-  def validate_data_mac(data: Array[Byte], key: String, digest: String): Boolean = {
-    val SHA1 = "HmacSHA1";
-    val keySpec = new crypto.spec.SecretKeySpec(key.getBytes(), SHA1)
-    val sig = {
-      val mac = crypto.Mac.getInstance(SHA1)
-      mac.init(keySpec)
-      Base64.encodeBase64URLSafeString(mac.doFinal(data))
-    }
-    //$hash .= '=';
-    log.debug("{} / {}", sig, digest)
+  def validateMac(data: Array[Byte], key: String, digest: String): Boolean = {
+    val sig = getMac(data, key)
+    logger.debug("Mac check: {} / {}", sig, digest)
     sig == digest
   }
 }

@@ -1,6 +1,6 @@
 package net.google.safebrowsing2
 
-import net.google.safebrowsing2.Helpers._
+import util.Helpers._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
 object DataParser extends BinaryParsers {

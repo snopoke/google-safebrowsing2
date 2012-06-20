@@ -1,7 +1,10 @@
-package net.google.safebrowsing2
+package util
 import java.security.MessageDigest
-
+import javax.crypto
 import scala.Array.canBuildFrom
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import org.apache.commons.codec.binary.Base64
 
 object Helpers {
 
@@ -26,5 +29,13 @@ object Helpers {
     } yield hex.substring(i, i + 2)
     
     chunks.map(Integer.parseInt(_, 16).toByte).toArray
+  }
+  
+  def getMac(data: Array[Byte], key: String) = {
+    val SHA1 = "HmacSHA1";
+    val keySpec = new SecretKeySpec(key.getBytes(), SHA1)
+    val mac = Mac.getInstance(SHA1)
+    mac.init(keySpec)
+    Base64.encodeBase64URLSafeString(mac.doFinal(data))
   }
 }

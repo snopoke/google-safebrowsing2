@@ -5,7 +5,7 @@ import scala.collection.mutable
 object RFDResponseParser extends RegexParsers {
   override def skipWhitespace = false
 
-  case class Resp(mac: Option[String], next: Int, reset: Option[Boolean], list: Option[List[ChunkList]])
+  case class Resp(rekey: Boolean, mac: Option[String], next: Int, reset: Boolean, list: Option[List[ChunkList]])
   case class ChunkList(name: String, data: List[ListData])
   abstract trait ListData
   case class Redirect(url: String, mac: Option[String]) extends ListData
@@ -14,7 +14,12 @@ object RFDResponseParser extends RegexParsers {
   
   def parse(input: String) = parseAll(chunk, input)
   def chunk = opt(head) ~ next ~ opt(reset) ~ opt(list+) ^^ {
-    case m ~ n ~ r ~ l => Resp(m, n, r, l)
+    case m ~ n ~ r ~ l => {
+      m match {
+        case Some("rekey") => Resp(true, None, n, r.getOrElse(false), l) 
+        case _ => Resp(false, m, n, r.getOrElse(false), l) 
+      }
+    }
   }
   def head = (rekey | mac) <~ space
   def rekey = "e:please" ~> "rekey"
