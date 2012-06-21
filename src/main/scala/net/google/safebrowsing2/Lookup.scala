@@ -3,6 +3,8 @@ import org.slf4j.LoggerFactory
 import com.github.tototoshi.http.Client
 import scala.collection.mutable
 import java.net.URI
+import com.buildabrand.gsb.util.URLUtils
+import util.Logging
 
 /**
  * Lookup implements the Google Safe Browsing v2 Lookup API.
@@ -11,9 +13,8 @@ import java.net.URI
  *
  * @see http://code.google.com/apis/safebrowsing/lookup_guide.html
  */
-class Lookup(apikey: String) {
+class Lookup(apikey: String) extends Logging {
 
-  val log = LoggerFactory.getLogger(classOf[Lookup])
   val appver = "1.0"
 
   /**
@@ -54,9 +55,9 @@ class Lookup(apikey: String) {
       batch foreach (url => {
         val canonical = canonicalUri(url)
         body.append("\n" + canonical)
-        log.debug("{} => {}", url, canonical)
+        logger.debug("{} => {}", url, canonical)
       })
-      log.debug("BODY:\n{}\n\n", body)
+      logger.debug("BODY:\n{}\n\n", body)
 
       val apiUrl = "https://sb-ssl.google.com/safebrowsing/api/lookup?client=perl&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
@@ -67,13 +68,13 @@ class Lookup(apikey: String) {
       val res = httpClient.POST(apiUrl, body.toString())
       val responseBody = res.asString()
       res.statusCode() match {
-        case 200 => results ++ parseResponse(responseBody, batch)
+        case 200 => results ++= parseResponse(responseBody, batch)
         case 204 => {
-          log.debug("No matches in batch")
+          logger.debug("No matches in batch")
           batch foreach (url => results += url -> "ok")
         }
         case other => {
-          log.error("Error requesting batch: {}", other)
+          logger.error("Error requesting batch: {}", other)
           batch foreach (url => results += url -> ("error: " + other))
         }
       }
@@ -86,7 +87,7 @@ class Lookup(apikey: String) {
     val results = mutable.Map.empty[String, String]
     val lines = response.split("\n")
     if (lines.length != urls.length) {
-      log.error("Number of URLs in the reponse does not match the number of URLs in the request: {} / {}", lines.length, urls.length)
+      logger.error("Number of URLs in the reponse does not match the number of URLs in the request: {} / {}", lines.length, urls.length)
       urls foreach (url => results += url -> "error")
       return results.toMap
     }
@@ -99,8 +100,6 @@ class Lookup(apikey: String) {
   }
 
   def canonicalUri(url: String): String = {
-    // TODO: better URL canonicalization
-    new URI(url).normalize().toASCIIString()
+    URLUtils.getInstance().canonicalizeURL(url)
   }
-
 }

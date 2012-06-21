@@ -27,6 +27,8 @@ import util.Helpers.sha256
 import util.Logging
 import net.google.safebrowsing2.db.DBI
 import scala.math.min
+import org.joda.time.DateTime
+import org.joda.time.Period
 
 object Result extends Enumeration {
   type Result = Value
@@ -40,13 +42,11 @@ object Result extends Enumeration {
   val SUCCESSFUL = Value("SUCCESSFUL") // data sent
 }
 
-class SafeBrowsing2(storage: DBI) extends Logging {
+class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
-  val FULL_HASH_TIME = 45 * 60 * 1000
-  val appver = "0.1"
   val lists = Array(MALWARE, PHISHING)
-  var apikey = ""
+  val appver = "0.1"
   var pver = "2.2"
   var httpClient: Client = new Client
 
@@ -58,15 +58,15 @@ class SafeBrowsing2(storage: DBI) extends Logging {
       lists
     }
 
-    val now = new Date()
+    val now = new DateTime()
     // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
       val info = storage.lastUpdate(listName)
-      val tooEarly = !force && info.waitUntil.after(now)
+      val tooEarly = !force && info.map(_.waitUntil.isAfter(now)).getOrElse(false)
       if (tooEarly) {
-        logger.debug("Too early to update {}", listName)
+        logger.debug("Too early to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
       } else {
-        logger.debug("OK to update {}: {} / {}", Array(listName, now, info.waitUntil))
+        logger.debug("OK to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
       }
       !tooEarly
     })
@@ -76,6 +76,8 @@ class SafeBrowsing2(storage: DBI) extends Logging {
       return NO_UPDATE;
     }
 
+    sys.exit()
+    
     var macKey: Option[MacKey] = None
     if (withMac) {
       macKey = getMacKeys orElse {
@@ -92,7 +94,7 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     val response = httpClient.POST(postUrl, body)
 
     val responseData = response.asString
-    logger.debug("RFD response for lists: {}\n{}", toUpdate.mkString(","), responseData)
+    logger.trace("RFD response for lists: {}\n{}", toUpdate.mkString(","), responseData)
     response.statusCode() match {
       case 200 => {}
       case other => {
@@ -189,21 +191,11 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     var cleanurl = URLUtils.getInstance().canonicalizeURL(url)
     val uri = new URL(cleanurl)
     val domain = uri.getHost()
-    val hosts = canonicalDomainSuffixes(domain) // only top-2 in this case
-
-    hosts foreach (host => {
-      logger.debug("Domain for key: {} => {}", domain, host)
-      val suffix = hashPrefix(host + "/") // Don't forget trailing slash
-      logger.debug("Host key: {}", suffix)
-      val listMatch = lookup_suffix(candidates, url, suffix)
-      if (listMatch.isDefined)
-        return listMatch
-    })
-
-    None
+    val hostKey = makeHostKey(domain)
+    lookup_hostKey(candidates, url, hashPrefix(hostKey))
   }
 
-  def lookup_suffix(lists: Seq[String], url: String, suffix: String): Option[String] = {
+  def lookup_hostKey(lists: Seq[String], url: String, hostKey: String): Option[String] = {
 
     val full_hashes = getFullHashes(url)
 
@@ -211,7 +203,7 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     val full_hashes_prefix = full_hashes map (h => h.substring(0, 8))
 
     // Local lookup
-    val add_chunks = local_lookup_suffix(suffix, full_hashes_prefix)
+    val add_chunks = local_lookup_suffix(hostKey, full_hashes_prefix)
     if (add_chunks.isEmpty) {
       logger.debug("No hit in local lookup")
       return None
@@ -221,7 +213,7 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     val hashesInStore = new ListBuffer[String]()
     add_chunks foreach (achunk => {
       if (lists.contains(achunk.list)) {
-        val hashes = storage.getFullHashes(achunk.chunknum, new Date().getTime() - FULL_HASH_TIME, achunk.list)
+        val hashes = storage.getFullHashes(achunk.chunknum, new DateTime().minus(Period.minutes(45)), achunk.list)
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
         hashesInStore ++= hashes
 
@@ -234,18 +226,15 @@ class SafeBrowsing2(storage: DBI) extends Logging {
       }
     })
 
-    // remove hashes that we already have (and which haven't expired
-    full_hashes.filter(h => hashesInStore.find(_.equals(h)).isEmpty)
-
     //ask for new hashes
-    val hashes = request_full_hash(full_hashes_prefix)
-    storage.addFullHashes(new Date(), hashes)
+    val hashes = requestFullHashes(full_hashes_prefix)
+    storage.addFullHashes(new DateTime(), hashes)
 
     full_hashes foreach (fhash => {
       val hash = hashes.find(h => h.hash.equals(fhash))
       val list = hash.flatMap(h => lists.find(l => h.list.equals(l)))
       if (hash.isDefined && list.isDefined) {
-        logger.debug("Match")
+        logger.debug("Match for url {} in list {}", url, list.get)
         return list
       }
     })
@@ -255,48 +244,64 @@ class SafeBrowsing2(storage: DBI) extends Logging {
   /**
    *  Request full full hashes for specific prefixes from Google.
    */
-  def request_full_hash(prefixes: Seq[String]): Seq[Hash] = {
+  def requestFullHashes(prefixes: Seq[String]): Seq[Hash] = {
 
     /**
      * Return true if the wait time has passed or false otherwise
      */
-    def delay(status: Status, wait: Int): Boolean = {
-      new Date().getTime() - status.updateTime > wait
+    def delay(status: Status, wait: Period): Boolean = {
+      status.updateTime.plus(wait).isBeforeNow()
     }
 
-    prefixes filter (prefix => {
+    val toFetch = prefixes filter (prefix => {
       val errors = storage.getFullHashError(prefix)
-      errors match {
+      val fetch = errors match {
         case None => true
         case Some(status) if (status.errors <= 2) => true
-        case Some(status) if (status.errors == 3) => delay(status, 30 * 60) // 30 mins
-        case Some(status) if (status.errors == 4) => delay(status, 60 * 60) // 1 hour
-        case Some(status) => delay(status, 2 * 60 * 60) // 2 hours
+        case Some(status) if (status.errors == 3) => delay(status, Period.minutes(30)) 
+        case Some(status) if (status.errors == 4) => delay(status, Period.hours(1))
+        case Some(status) => delay(status, Period.hours(2))
       }
+      if (!fetch){
+        logger.debug("Delaying fetch of full hash for prefix: {} / {}", prefix, errors)
+      }
+      fetch
     })
 
+    if (toFetch.isEmpty){
+      logger.debug("Fetching of all full hashes has been delayed.")
+      return Nil
+    }
+    
     val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
-    val prefix_list = prefixes.map(p => hex2Bytes(p)).reduce(_ ++ _)
-    val header = (prefixes(0).length + ":" + prefixes.size + "\n").getBytes()
+    val prefix_list = toFetch.map(p => hex2Bytes(p)).reduce(_ ++ _)
+    // assume all prefixes are the same size
+    // TODO: split into batches of different sizes
+    /*
+     * # python equivalent
+     * prefix_sizes = {}  # prefix length -> list of prefixes.
+     * for prefix in prefixes:
+     *   prefix_sizes.setdefault(len(prefix), []).append(prefix)
+     */
+    val size = hex2Bytes(toFetch(0)).length
+    val header = (size + ":" + size*toFetch.size + "\n").getBytes()
+    println(prefix_list.length)
     val body = header ++ prefix_list
+    logger.trace("Full hash request body:\n{}", new String(body))
     val res = httpClient.POST(url, body, Map())
-    val responseData = res.asBytes()
-    res.statusCode() match {
+    res.statusCode(false) match {
       case 200 => {
-        prefixes.foreach(prefix => storage.fullHashOK(new Date(), prefix))
-        parseFullHashes(responseData)
+        storage.clearFullhashErrors(toFetch)
+        parseFullHashes(res.asBytes())
       }
+      case 204 => logger.debug("No content returned for hash request"); res.consume; Nil
       case other => {
+        res.consume
         logger.error("Full hash request failed: {}", other)
-        prefixes foreach (p => {
-          val error = storage.getFullHashError(p)
-          // ?? is this correct?
-          error foreach (status => {
-            if (status.errors >= 2 || (status.errors == 1 && new Date().getTime() - status.updateTime > 5 * 60 * 1000)) {
-              storage.fullHashError(new Date(), p)
-            }
-          })
+        toFetch foreach (p => {
+          // TODO: backoff mode
+        	storage.fullHashError(new DateTime(), p)
         })
         Nil
       }
@@ -446,25 +451,19 @@ class SafeBrowsing2(storage: DBI) extends Logging {
   }
 
   /**
-   * Find all suffixes for a domain.
+   * Get host key for domain
    */
-  def canonicalDomainSuffixes(domain: String): Seq[String] = {
+  def makeHostKey(domain: String): String = {
 
     if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
-      return Array(domain);
+      return domain
     }
 
-    val domains = mutable.MutableList[String]()
-    var parts = domain.split("""\.""")
-    if (parts.length >= 3) {
-      parts = parts.takeRight(3)
-      domains += parts.mkString(".")
-      parts = parts.drop(1)
-    }
-
-    domains += parts.mkString(".")
-    domains
+    val parts = domain.split("""\.""")
+    val hostKey = parts.takeRight(3).mkString(".")
+    logger.debug("HostKey: {} -> {}", domain, hostKey)
+    hostKey + "/" // Don't forget trailing slash
   }
 
   def getExistingChunks(lists: Array[String], withMac: Boolean): String = {
@@ -512,14 +511,16 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     logger.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
 
-    val data = res.asBytes()
-    res.statusCode() match {
+    res.statusCode(false) match {
       case 200 => {}
       case other => {
+        res.consume
         logger.error("Request to {} failed: {}", url, other)
         return SERVER_ERROR
       }
     }
+    
+    val data = res.asBytes()
 
     macKey foreach { key =>
       hmac match {
@@ -572,10 +573,9 @@ class SafeBrowsing2(storage: DBI) extends Logging {
       "appver" -> appver,
       "pver" -> pver))
 
-    val body = resp.asString()
-    resp.statusCode() match {
-      case 200 => processMacResponse(body)
-      case other => logger.error("Key request failed: {}" + other); None
+    resp.statusCode(false) match {
+      case 200 => processMacResponse(resp.asString())
+      case other => logger.error("Key request failed: {}" + other); resp.consume; None
     }
   }
 

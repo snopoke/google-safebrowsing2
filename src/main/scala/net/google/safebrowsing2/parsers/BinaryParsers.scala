@@ -7,9 +7,13 @@ import scala.annotation.tailrec
 import java.lang.Float.intBitsToFloat
 import java.lang.Double.longBitsToDouble
 import util.Helpers._
+import java.io.EOFException
 
+/**
+ * @see http://www.scala-lang.org/node/4693
+ */
 trait ParsersUtil extends Parsers {
-  lazy val anyElem: Parser[Elem] = elem("anyElem", _ != -1)
+  lazy val anyElem: Parser[Elem] = elem("anyElem", _ => true)
   def elemExcept(xs: Elem*): Parser[Elem] = elem("elemExcept", x => !(xs contains x))
   def elemOf(xs: Elem*): Parser[Elem] = elem("elemOf", xs contains _)
 
@@ -30,10 +34,15 @@ class ByteReader(val bytes: Array[Byte], override val offset: Int) extends Reade
   def this(bytes: Seq[Byte]) = this(bytes.toArray, 0)
   def this(str: String) = this(str.getBytes, 0)
 
-  override def source = bytes map (_.toChar)
+  def first: Byte = {
+    if (offset < bytes.length) {
+      bytes(offset)
+    } else {
+      throw new EOFException
+    }
+  }
 
-  def first: Byte = if (offset < bytes.length) bytes(offset) else -1
-  def rest: ByteReader = if (offset < bytes.length) new ByteReader(bytes, offset + 1) else this
+  def rest: ByteReader = if (atEnd) this else new ByteReader(bytes, offset + 1)
   def pos: Position = ByteOffsetPosition(offset)
   def atEnd = offset >= bytes.length
 
@@ -52,6 +61,30 @@ trait BinaryParsers extends Parsers with ParsersUtil {
   protected implicit def readerToByteReader(x: Input): ByteReader = x match {
     case br: ByteReader => br
     case _ => new ByteReader(x)
+  }
+  
+  override def acceptIf(p: Elem => Boolean)(err: Elem => String): Parser[Elem] = Parser { in =>
+    try {
+      if (p(in.first)) {
+        Success(in.first, in.rest)
+      } else {
+        Failure(err(in.first), in)
+      }
+    } catch {
+      case e: EOFException => Failure("EOF unexpected", in)
+    }
+  }
+  
+  override def acceptMatch[U](expected: String, f: PartialFunction[Elem, U]): Parser[U] = Parser{ in =>
+    try {
+      if (f.isDefinedAt(in.first)) {
+        Success(f(in.first), in.rest)
+      } else {
+        Failure(expected + " expected", in)
+      }
+    } catch {
+      case e: EOFException => Failure("EOF unexpected: " + expected + " expected", in)
+    }
   }
   def toInt(bytes: Seq[Byte]): Int = bytes.foldLeft(0)((x, b) => (x << 8) + (b & 0xFF))
   def toLong(bytes: Seq[Byte]): Long = bytes.foldLeft(0L)((x, b) => (x << 8) + (b & 0xFF))

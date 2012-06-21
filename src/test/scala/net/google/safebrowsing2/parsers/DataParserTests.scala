@@ -31,6 +31,16 @@ class DataParserTests {
   }
   
   @Test
+  def testParseData_fail = {
+    val data = "a:4:5:5\n" +
+    		"ab"
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, rest) => fail("Expected failure, got " + c)
+      case x => // test passes
+    }
+  }
+  
+  @Test
   def testParse_add0 = {
     val data = "a:4:5:5\n" +
     		new String(Array(9,10,11,12,0): Array[Byte])
@@ -71,7 +81,7 @@ class DataParserTests {
   @Test
   def testParse_sub0 = {
     val data = "s:3:2:9\n" +
-    		new String(Array(9,10,11,12,0,3,4,5,6): Array[Byte])
+    		new String(Array(9,10,11,12,0,0,0,0,6): Array[Byte])
     val parsed = DataParser.parse(data) match {
       case DataParser.Success(c, _) => Option(c)
       case x => println(x); None
@@ -84,13 +94,13 @@ class DataParserTests {
     val sub = parsed.get(0).asInstanceOf[SubHead]
     assertThat(sub.host, is("090A0B0C"))
     assertThat(sub.count, is(0))
-    assertThat(sub.pairs, is(List(("03040506",""))))
+    assertThat(sub.pairs, is(List((6,""))))
   }
   
   @Test
   def testParse_subGT0 = {
     val data = "s:3:2:17\n" +
-    		new String(Array(9,10,11,12,2,3,4,5,6,0,1,7,8,9,10,15,15): Array[Byte])
+    		new String(Array(9,10,11,12,2,0,0,1,0,1,1,0,1,0,0,15,15): Array[Byte])
     val parsed = DataParser.parse(data) match {
       case DataParser.Success(c, _) => Option(c)
       case x => println(x); None
@@ -103,6 +113,6 @@ class DataParserTests {
     val sub = parsed.get(0).asInstanceOf[SubHead]
     assertThat(sub.host, is("090A0B0C"))
     assertThat(sub.count, is(2))
-    assertThat(sub.pairs, is(List(("03040506","0001"), ("0708090A", "0F0F"))))
+    assertThat(sub.pairs, is(List((256,"0101"), (65536, "0F0F"))))
   }
 }

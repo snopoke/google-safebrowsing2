@@ -5,17 +5,17 @@
 		<param name="File" value="target/testoutput.log" />
 		<param name="Append" value="true" />
 		<layout class="org.apache.log4j.PatternLayout">
-			<param name="ConversionPattern" value="%d{ABSOLUTE} %5p %c{1}:%L - %m%n" />
+			<param name="ConversionPattern" value="%-6r [%15.15t] %-5p %30.30c %x - %m%n" />
 		</layout>
 	</appender>
 	<appender name="stdout" class="org.apache.log4j.ConsoleAppender">
 		<layout class="org.apache.log4j.PatternLayout">
-			<param name="ConversionPattern" value="%d{ABSOLUTE} %5p %c{1}:%L - %m%n" />
+			<param name="ConversionPattern" value="%-6r [%15.15t] %-5p %30.30c %x - %m%n" />
 		</layout>
 	</appender>
 	
 	<logger name="net.google">
-		<level value="DEBUG" />
+		<level value="TRACE" />
 	</logger>
 	
 	<logger name="com.buildabrand.gsb">
@@ -23,8 +23,8 @@
 	</logger>
 
 	<root>
-		<priority value="DEBUG"></priority>
- 		<!-- <appender-ref ref="stdout" /> -->
+		<priority value="WARN"></priority>
+ 		<appender-ref ref="stdout" />
 		<appender-ref ref="file" />
 	</root>
 </log4j:configuration>

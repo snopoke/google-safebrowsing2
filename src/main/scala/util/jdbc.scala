@@ -424,8 +424,8 @@ class PreparedStatementExtras(ps: PreparedStatement) {
         case f: Float => setFloat(n, f)
         case d: Double => setDouble(n, d)
         case b: Boolean => setBoolean(n, b)
-        
         case s: String => setString(n, s)
+        case dt: Date =>  setTimestamp(n, new java.sql.Timestamp(dt.getTime))
         
         case i: ReadableInstant => setInstant(n, i)
         

@@ -7,7 +7,7 @@ object DataParser extends BinaryParsers {
   
     case class AdHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
     lazy val host = bytes2Hex(data.take(4))
-    val count = data(4).toInt
+    lazy val count = if (data.length > 4) data(4).toInt else 0
     
     /**
      * count = 0 -> no PREFIX
@@ -39,7 +39,7 @@ object DataParser extends BinaryParsers {
   
   case class SubHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
     lazy val host = bytes2Hex(data.take(4))
-    val count = data(4).toInt
+    lazy val count = if (data.length > 4) data(4).toInt else 0
     
     /**
      * count = 0 -> only one ADDCHUNKNUM, no PREFIX
@@ -48,11 +48,11 @@ object DataParser extends BinaryParsers {
      * ADDCHUNKNUM length = 4
      * PREFIX length = hashlen
      */
-    lazy val pairs:List[(String,String)] = if(count == 0) List((bytes2Hex(data.slice(5,9)), "")) else {
+    lazy val pairs:List[(Int,String)] = if(count == 0) List((toInt(data.slice(5,9)), "")) else {
       (0 until count toList) map { i =>
         val start = 5+((hashlen+4)*i)
         val prefixStart = start + 4
-        val addchunknum = bytes2Hex(data.slice(start, prefixStart))
+        val addchunknum = toInt(data.slice(start, prefixStart))
         val prefix = bytes2Hex(data.slice(prefixStart, prefixStart+hashlen))
         (addchunknum, prefix)
       }

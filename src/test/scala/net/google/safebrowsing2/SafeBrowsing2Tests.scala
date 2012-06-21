@@ -22,7 +22,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   @Before
   def before = {
     storage = mock[DBI]
-    sb2 = new SafeBrowsing2(storage)
+    sb2 = new SafeBrowsing2("",storage)
     sb2.httpClient = mock[Client]
   }
 
@@ -96,7 +96,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     val data = "a:6:2:9\n" +
       new String(Array(9, 10, 11, 12, 2, 1, 1, 2, 2): Array[Byte]) +
       "s:3:2:9\n" +
-      new String(Array(1, 2, 3, 4, 0, 1, 1, 2, 2): Array[Byte])
+      new String(Array(1, 2, 3, 4, 0, 0,0,0,8): Array[Byte])
     when(sb2.httpClient.GET("http://url")).thenReturn(resp)
     when(resp.statusCode()).thenReturn(200)
     when(resp.asBytes()).thenReturn(data.getBytes())
@@ -104,7 +104,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     val result = sb2.processRedirect("url", None, "list", None)
     assertThat(result, is(Result.SUCCESSFUL))
     verify(storage).addChunks_a(6, "090A0B0C", List("0101", "0202"), "list")
-    verify(storage).addChunks_s(3, "01020304", List(("01010202", "")), "list")
+    verify(storage).addChunks_s(3, "01020304", List((8, "")), "list")
   }
 
   @Test
@@ -147,25 +147,20 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
   @Test
   def testCanonicalDomainSuffixes = {
-    val domains = sb2.canonicalDomainSuffixes("www.google.com")
-    assertThat(domains.size, is(2))
-    assertTrue(domains.contains("www.google.com"))
-    assertTrue(domains.contains("google.com"))
+    val domain = sb2.makeHostKey("www.google.com")
+    assertThat(domain, is("www.google.com/"))
   }
 
   @Test
   def testCanonicalDomainSuffixes_short = {
-    val domains = sb2.canonicalDomainSuffixes("google.com")
-    assertThat(domains.size, is(1))
-    assertTrue(domains.contains("google.com"))
+    val domain = sb2.makeHostKey("google.com")
+    assertThat(domain, is("google.com/"))
   }
 
   @Test
   def testCanonicalDomainSuffixes_long = {
-    val domains = sb2.canonicalDomainSuffixes("malware.testing.google.test")
-    assertThat(domains.size, is(2))
-    assertTrue(domains.contains("google.test"))
-    assertTrue(domains.contains("testing.google.test"))
+    val domain = sb2.makeHostKey("malware.testing.google.test")
+    assertThat(domain, is("testing.google.test/"))
   }
   
   @Test
