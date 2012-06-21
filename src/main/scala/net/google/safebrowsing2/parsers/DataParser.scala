@@ -1,4 +1,4 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
 
 import util.Helpers._
 import scala.util.parsing.input.CharArrayReader.EofCh
@@ -16,7 +16,7 @@ object DataParser extends BinaryParsers {
      * PREFIX length = hashlen
      */
     lazy val prefixes:List[String] = if(count == 0) Nil else {
-      (0 to count-1 toList) map { i =>
+      (0 until count toList) map { i =>
         val start = 5+(hashlen*i)
         bytes2Hex(data.slice(start, start+hashlen).toArray)
       }
@@ -27,7 +27,7 @@ object DataParser extends BinaryParsers {
         a.count == count &&
         a.hashlen == hashlen && 
     	a.host == host &&
-    	a.data.deepEquals(data)
+    	a.data.deep.equals(data.deep)
       }
       case _ => false
     }
@@ -49,7 +49,7 @@ object DataParser extends BinaryParsers {
      * PREFIX length = hashlen
      */
     lazy val pairs:List[(String,String)] = if(count == 0) List((bytes2Hex(data.slice(5,9)), "")) else {
-      (0 to count-1 toList) map { i =>
+      (0 until count toList) map { i =>
         val start = 5+((hashlen+4)*i)
         val prefixStart = start + 4
         val addchunknum = bytes2Hex(data.slice(start, prefixStart))
@@ -63,7 +63,7 @@ object DataParser extends BinaryParsers {
         s.count == count &&
         s.hashlen == hashlen && 
     	s.host == host &&
-    	s.data.deepEquals(data)
+    	s.data.deep.equals(data.deep)
       }
       case _ => false
     }

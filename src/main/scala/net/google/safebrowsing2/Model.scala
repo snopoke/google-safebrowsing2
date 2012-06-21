@@ -1,4 +1,4 @@
-package net.google.safebrowsing2.model
+package net.google.safebrowsing2
 import java.util.Date
 
 case class Hash(chunknum: Int, hash: String, list: String)

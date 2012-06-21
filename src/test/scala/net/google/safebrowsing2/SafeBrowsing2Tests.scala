@@ -12,7 +12,7 @@ import org.mockito.Matchers
 import com.github.tototoshi.http.Response
 import org.apache.http.HttpResponse
 import util.Helpers._
-import net.google.safebrowsing2.model._
+import net.google.safebrowsing2.db.DBI
 
 class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 

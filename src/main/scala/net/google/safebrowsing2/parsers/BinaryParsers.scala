@@ -1,4 +1,4 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
 
 import scala.util.parsing.combinator._
 import scala.util.parsing.input.{ Position, Reader }
@@ -7,7 +7,6 @@ import scala.annotation.tailrec
 import java.lang.Float.intBitsToFloat
 import java.lang.Double.longBitsToDouble
 import util.Helpers._
-import com.google.common.io.ByteStreams
 
 trait ParsersUtil extends Parsers {
   lazy val anyElem: Parser[Elem] = elem("anyElem", _ != -1)

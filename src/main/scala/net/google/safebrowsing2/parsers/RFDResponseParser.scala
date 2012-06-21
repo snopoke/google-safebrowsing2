@@ -1,4 +1,5 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
+
 import scala.util.parsing.combinator.RegexParsers
 import scala.collection.mutable
 

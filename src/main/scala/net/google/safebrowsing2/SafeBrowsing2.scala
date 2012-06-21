@@ -2,24 +2,31 @@ package net.google.safebrowsing2
 import java.net.URI
 import java.net.URL
 import java.util.Date
+import scala.Array.canBuildFrom
 import scala.collection.mutable.ListBuffer
 import scala.collection.mutable
-import scala.util.control.Breaks._
-import org.apache.commons.codec.binary.Base64
-import org.slf4j.LoggerFactory
+import scala.util.control.Breaks.break
+import scala.util.control.Breaks.breakable
 import com.buildabrand.gsb.util.URLUtils
 import com.github.tototoshi.http.Client
-import model.Status
-import net.google.safebrowsing2.model._
-import util.Helpers._
-import org.joda.time.DateTime
+import Result.DATABASE_RESET
+import Result.INTERNAL_ERROR
+import Result.MAC_ERROR
+import Result.MAC_KEY_ERROR
+import Result.NO_UPDATE
+import Result.Result
+import Result.SERVER_ERROR
+import Result.SUCCESSFUL
+import net.google.safebrowsing2.parsers.DataParser
+import net.google.safebrowsing2.parsers.FullHashParser
+import net.google.safebrowsing2.parsers.RFDResponseParser
+import util.Helpers.bytes2Hex
+import util.Helpers.getMac
+import util.Helpers.hex2Bytes
+import util.Helpers.sha256
 import util.Logging
-
-object SafeBrowsing2 {
-
-  val FULL_HASH_TIME = 45 * 60 * 1000
-  val INTERVAL_FULL_HASH_TIME = "INTERVAL 45 MINUTE"
-}
+import net.google.safebrowsing2.db.DBI
+import scala.math.min
 
 object Result extends Enumeration {
   type Result = Value
@@ -33,10 +40,7 @@ object Result extends Enumeration {
   val SUCCESSFUL = Value("SUCCESSFUL") // data sent
 }
 
-import Result._
-
 class SafeBrowsing2(storage: DBI) extends Logging {
-
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
   val FULL_HASH_TIME = 45 * 60 * 1000
@@ -430,7 +434,7 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     }
 
     var parts = domain.split("""\.""")
-    parts = parts.takeRight(Math.min(5, parts.length - 1))
+    parts = parts.takeRight(min(5, parts.length - 1))
     
     val domains = mutable.MutableList[String](domain)
     while (parts.length >= 2) {
@@ -625,4 +629,10 @@ class SafeBrowsing2(storage: DBI) extends Logging {
     logger.debug("Mac check: {} / {}", sig, digest)
     sig == digest
   }
+}
+
+object SafeBrowsing2 {
+
+  val FULL_HASH_TIME = 45 * 60 * 1000
+  val INTERVAL_FULL_HASH_TIME = "INTERVAL 45 MINUTE"
 }

@@ -268,6 +268,9 @@ trait JdbcOperations extends Logging {
     }
     
     /** Specify SQL and params for query, result object can be used to actually query the data */
+    def query(q: String) = new ParamsQuery(q, Nil: _*)
+    
+    /** Specify SQL and params for query, result object can be used to actually query the data */
     def query(q: String, params: Any*) = new ParamsQuery(q, params: _*)
     
     /** Fetch meta data in the safe way */
@@ -436,5 +439,3 @@ class PreparedStatementExtras(ps: PreparedStatement) {
     }
     
 }
-
-// vim: set ts=4 sw=4 et:

@@ -1,9 +1,11 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
+
 import org.junit.Test
 import org.junit.Assert._
 import org.hamcrest.CoreMatchers._
-import net.google.safebrowsing2.FullHashParser.{FullHashData, Envelope}
+import net.google.safebrowsing2.parsers.FullHashParser.{FullHashData, Envelope}
 import util.Helpers._
+import net.google.safebrowsing2.ByteUtil
 
 class FullHashParserTests extends ByteUtil {
 

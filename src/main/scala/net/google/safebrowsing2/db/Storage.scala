@@ -1,12 +1,11 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.db
 
-import java.util.Collection
 import java.util.Date
 import java.util.{List => JavaList}
-import net.google.safebrowsing2.model.Hash
-import net.google.safebrowsing2.model.Chunk
-import net.google.safebrowsing2.model.Status
-import net.google.safebrowsing2.model.MacKey
+import net.google.safebrowsing2.MacKey
+import net.google.safebrowsing2.Hash
+import net.google.safebrowsing2.Chunk
+import net.google.safebrowsing2.Status
 
 trait Storage {
 

@@ -15,12 +15,12 @@ libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-log4j12" % "1.6.4",
   "log4j" % "log4j" % "1.2.16",
   "joda-time" % "joda-time" % "1.6",
-  "com.twitter" % "querulous" % "2.7.6",
   "com.github.tototoshi" %% "scala-http-client" % "1.0",
   "junit" % "junit" % "4.10" % "test",
   "org.mockito" % "mockito-core" % "1.9.0" % "test",
   "org.scalatest" %% "scalatest" % "1.7.1" % "test",
-  "com.novocode" % "junit-interface" % "0.8" % "test"
+  "com.novocode" % "junit-interface" % "0.8" % "test",
+  "mysql" % "mysql-connector-java" % "5.1.20" % "test"
 )
 
 testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")

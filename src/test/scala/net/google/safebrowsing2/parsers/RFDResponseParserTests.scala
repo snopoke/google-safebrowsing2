@@ -1,8 +1,9 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
+
 import org.junit.Test
 import org.junit.Assert._
 import org.hamcrest.CoreMatchers._
-import net.google.safebrowsing2.RFDResponseParser._
+import net.google.safebrowsing2.parsers.RFDResponseParser._
 
 class RFDResponseParserTests {
 

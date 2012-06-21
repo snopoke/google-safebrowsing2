@@ -1,8 +1,9 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
+
 import org.junit.Test
 import org.junit.Assert._
 import org.hamcrest.CoreMatchers._
-import net.google.safebrowsing2.DataParser._
+import net.google.safebrowsing2.parsers.DataParser._
 
 class DataParserTests {
 

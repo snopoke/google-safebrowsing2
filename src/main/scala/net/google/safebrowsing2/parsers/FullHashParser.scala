@@ -1,4 +1,4 @@
-package net.google.safebrowsing2
+package net.google.safebrowsing2.parsers
 
 import util.Helpers._
 import scala.collection.mutable.ListBuffer
