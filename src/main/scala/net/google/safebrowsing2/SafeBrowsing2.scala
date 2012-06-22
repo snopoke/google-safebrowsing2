@@ -86,19 +86,22 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       postUrl += "&wrkey=" + key.wrappedKey
     }
 
+    logger.debug("Performing request for data")
     var body = getExistingChunks(toUpdate, withMac)
+    logger.trace("Request for data body:\n{}", body)
     val response = httpClient.POST(postUrl, body)
 
     val responseData = response.asString
-    logger.trace("RFD response for lists: {}\n{}", toUpdate.mkString(","), responseData)
     response.statusCode() match {
-      case 200 => {}
+      case 200 => logger.debug("Request for data success")
       case other => {
         logger.error("Request failed. Response:\n{}", responseData)
         toUpdate.foreach(list => storage.updateError(now, list))
         throw new ApiException("Update request failed: HTTP Error=" + other)
       }
     }
+
+    logger.trace("RFD response for lists: {}\n{}", toUpdate.mkString(","), responseData)
 
     val parseResult = RFDResponseParser.parse(responseData) match {
       case RFDResponseParser.Success(resp, _) => Option(resp)
@@ -107,7 +110,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         throw new ParsingException("Error parsing response from server")
       }
     }
-
+    
+    logger.debug("Parsing RFD data successful")
     val resp = parseResult.get
     if (resp.rekey) {
       logger.debug("Re-key requested")
@@ -128,7 +132,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     })
 
     if (resp.reset) {
-      logger.debug("Database must be reset")
+      logger.error("================> DATABASE RESET REQUESTED <=================")
       toUpdate foreach (l => storage.reset(l))
       return 0
     }

@@ -14,6 +14,7 @@ import org.joda.time.Period
 import org.joda.time.ReadableInstant
 import org.joda.time.DateTime
 import net.google.safebrowsing2.Expression
+import util.Logging
 
 /**
  * Base Storage class used to access the databse.
@@ -24,7 +25,7 @@ import net.google.safebrowsing2.Expression
  * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2"))
  * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "root", "root"))
  */
-class DBI(jt: JdbcTemplate) extends Storage {
+class DBI(jt: JdbcTemplate) extends Storage with Logging {
     def this(ds: () => Connection) = this(new JdbcTemplate(ds))
     def this(ds: LiteDataSource) = this(new JdbcTemplate(ds))
     def this(ds: DataSource) = this(new JdbcTemplate(ds))
@@ -37,6 +38,7 @@ class DBI(jt: JdbcTemplate) extends Storage {
    * Should create tables if needed
    */
   def init = {
+    logger.error("Database init")
     val tables = mutable.ListBuffer("updates", "a_chunks", "s_chunks", "full_hashes", "full_hashes_errors", "mac_keys")
     metaData(meta => {
       val res = meta.getTables(null, null, "%", null)

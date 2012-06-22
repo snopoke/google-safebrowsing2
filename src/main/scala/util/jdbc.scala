@@ -43,7 +43,7 @@ trait LiteDataSource {
 /**
  * Factories to create data source
  */
-object LiteDataSource extends Logging {
+object LiteDataSource {
     /** Create from function, returning connection */
     def apply(f: () => Connection): LiteDataSource = new LiteDataSource {
         override def openConnection() = f()
