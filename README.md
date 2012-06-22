@@ -25,6 +25,7 @@ This project implements the [Google Safebrowsing API v2](https://developers.goog
 	})
 Outputs:
 http://www.google.com/ -> ok
+
 http://ianfette.org/ -> malware
 
 ## Database support
