@@ -24,9 +24,8 @@ This project implements the [Google Safebrowsing API v2](https://developers.goog
 	  println(a._1 + " -> " + a._2)
 	})
 Outputs:
-http://www.google.com/ -> ok
-
-http://ianfette.org/ -> malware
+	http://www.google.com/ -> ok
+	http://ianfette.org/ -> malware
 
 ## Database support
 Currently only MySQL and generic SQL are supported.
