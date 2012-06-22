@@ -31,15 +31,7 @@ class DBI(jt: JdbcTemplate) extends Storage {
 
   import jt._
     
-  var keepAll: Boolean = true
-  
   init
-  
-  def close = {
-    if (!keepAll) {
-      execute("DELETE FROM full_hashes WHERE timestamp < ?", new DateTime().minusMinutes(45))
-    }
-  }
 
   /**
    * Should create tables if needed
@@ -305,11 +297,11 @@ class DBI(jt: JdbcTemplate) extends Storage {
   }
 
   override def updateError(time: ReadableInstant, list: String, wait: Int = 60, errors: Int = 1) = {
-    if (lastUpdate(list).isEmpty) {
+    val status = lastUpdate(list)
+    if (status.isEmpty) {
       execute("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, ?, ?)", time, wait, errors, list)
     } else {
-      // FIXME: shouldn't this increment the errors?
-      execute("UPDATE updates SET last = ?, wait = ?, errors = ? WHERE list = ?", time, wait, errors, list)
+      execute("UPDATE updates SET last = ?, wait = ?, errors = ? WHERE list = ?", time, wait, status.get.errors + errors, list)
     }
   }
 
@@ -392,5 +384,9 @@ class DBI(jt: JdbcTemplate) extends Storage {
     execute("DELETE FROM full_hashes_errors", list);
 
     execute("DELETE FROM updates WHERE list = ?", list);
+  }
+  
+  def clearExpiredHashes = {
+    execute("DELETE FROM full_hashes WHERE timestamp < ?", new DateTime().minusMinutes(45))
   }
 }

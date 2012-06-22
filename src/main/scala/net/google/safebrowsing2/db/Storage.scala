@@ -44,12 +44,14 @@ trait Storage {
 
   def getFullHashError(prefix: String): Option[Status]
 
-  def getMacKey(): Option[MacKey]
+  def getMacKey: Option[MacKey]
 
   def addMacKey(key: MacKey)
 
-  def delete_mac_keys()
+  def delete_mac_keys
 
   def reset(list: String)
+  
+  def clearExpiredHashes
 
 }
