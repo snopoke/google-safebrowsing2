@@ -23,7 +23,9 @@ This project implements the [Google Safebrowsing API v2](https://developers.goog
 	resp.foreach(a => {
 	  println(a._1 + " -> " + a._2)
 	})
+	
 Outputs:
+
 	http://www.google.com/ -> ok
 	http://ianfette.org/ -> malware
 
