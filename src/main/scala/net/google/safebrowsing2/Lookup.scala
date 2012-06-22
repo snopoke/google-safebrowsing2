@@ -40,8 +40,31 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
    * 		"phishing",
    * 		"malware,phishing" (match both lists),
    *  		"error[: XXX]" (XXX is HTTP error code if relevant )
+   *  
+   *  Java compatibility method
    */
-  def lookup(urls: Seq[String], delay: Int = 0) = {
+  def jlookup(urls: Array[String], delay: Int = 0): java.util.Map[String, String] = {
+    import scala.collection.JavaConversions.mapAsJavaMap
+    lookup(urls, delay)
+  }
+  /**
+   * Lookup a list URLs against the Google Safe Browsing v2 lists.
+   *
+   * @param urls
+   * 	The list of URL's to check
+   * @param delay
+   * 	Int indicating how many seconds to delay between batches of 500 to avoid rate limiting by Google.
+   *
+   * @return Map[String, String]
+   * 	url -> {Google match}.
+   * 	The possible list of values for {Google match} are:
+   * 		"ok" (no match),
+   * 		"malware",
+   * 		"phishing",
+   * 		"malware,phishing" (match both lists),
+   *  		"error[: XXX]" (XXX is HTTP error code if relevant )
+   */
+  def lookup(urls: Seq[String], delay: Int = 0): Map[String, String] = {
 
     val results = mutable.Map.empty[String, String]
 
@@ -80,7 +103,7 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
       }
     } while (!remain.isEmpty)
 
-    results
+    results.toMap
   }
 
   def parseResponse(response: String, urls: Seq[String]): Map[String, String] = {

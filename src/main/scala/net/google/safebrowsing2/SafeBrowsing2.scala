@@ -174,15 +174,28 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     minUpdateWait
   }
+  
+  /**
+   * Lookup a URL against the Google Safe Browsing database.
+   *
+   * @param url
+   * @param listName Optional. Lookup against a specific list.
+   * @returns Returns List name if there is a match or null
+   * 
+   * Java compatibility method
+   */
+  def jlookup(url: String, listName: String, withMac: Boolean): String = {
+    lookup(url, listName, withMac).orNull
+  }
 
   /**
    * Lookup a URL against the Google Safe Browsing database.
    *
    * @param url
-   * @param listName Optional. Lookup against a specific list. Use the list(s) from new() by default.
-   * @returns Returns Option(list name) with matching list or None.
+   * @param listName Optional. Lookup against a specific list.
+   * @returns Returns Option(list name) if there is a match or None.
    */
-  def lookup(url: String, listName: String = "", withMac: Boolean = false): Option[String] = {
+  def lookup(url: String, listName: String, withMac: Boolean): Option[String] = {
     val candidates: Array[String] = if (!listName.isEmpty()) {
       Array(listName)
     } else {
