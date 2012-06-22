@@ -37,7 +37,7 @@ class DBI(jt: JdbcTemplate) extends Storage {
    * Should create tables if needed
    */
   def init = {
-    val tables = mutable.ListBuffer("updates", "a_chunks", "s_chunks", "full_hashes", "full_hashes_errors")
+    val tables = mutable.ListBuffer("updates", "a_chunks", "s_chunks", "full_hashes", "full_hashes_errors", "mac_keys")
     metaData(meta => {
       val res = meta.getTables(null, null, "%", null)
       while (res.next()){
@@ -56,6 +56,7 @@ class DBI(jt: JdbcTemplate) extends Storage {
       case "s_chunks" => create_table_s_chunks
       case "full_hashes" => create_table_full_hashes
       case "full_hashes_errors" => create_table_full_hashes_errors
+      case "mac_keys" => create_table_mac_keys
       case x => logger.warn("Unknown table: {}", x)
     })
   }
@@ -200,11 +201,11 @@ class DBI(jt: JdbcTemplate) extends Storage {
   }
 
   def create_table_mac_keys = {
-
+    logger.debug("Creating table: mac_keys")
     val schema = """
 		CREATE TABLE mac_keys (
 			client_key VARCHAR( 50 ) Default '',
-			wrapped_key VARCHAR( 50 ) Default ''
+			wrapped_key VARCHAR( 150 ) Default ''
 		)
 	"""
 
@@ -341,8 +342,8 @@ class DBI(jt: JdbcTemplate) extends Storage {
     }
   }
 
-  override def clearFullhashErrors(expressions: Seq[Expression]) = {
-    val params = expressions.map(e => Seq(e.hexPrefix))
+  override def clearFullhashErrors(chunks: Seq[Chunk]) = {
+    val params = chunks.map(c => Seq(c.prefix))
     executeBatch("DELETE FROM full_hashes_errors WHERE prefix = ?", params)
   }
 

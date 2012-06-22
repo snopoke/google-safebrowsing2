@@ -114,6 +114,5 @@ class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
     val e = Expression("a.b.c", "/1/2.html?param=1")
     assertThat(e.value, is("a.b.c/1/2.html?param=1"))
     assertThat(e.hexHash.length, is(64))
-    assertThat(e.hexPrefix.length, is(8))
   }
 }

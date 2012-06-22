@@ -37,8 +37,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    * @param force if true force the update ignoring wait times
    * @param withMac if true request using Message Authentication Codes
    * @return the number of seconds to wait before updating again
-   * @throws UpdateException
    */
+  @throws(classOf[ApiException])
   def update(listName: String, force: Boolean = false, withMac: Boolean = false): Int = {
 
     val candidates: Array[String] = if (listName == null || !listName.isEmpty()) {
@@ -49,6 +49,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     val now = new DateTime()
     var minUpdateWait = Int.MaxValue
+
     // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
       val info = storage.lastUpdate(listName)
@@ -73,18 +74,16 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       return minUpdateWait;
     }
 
-    sys.exit()
-
     var macKey: Option[MacKey] = None
     if (withMac) {
       macKey = getMacKeys orElse {
-        throw new UpdateException("Error getting MAC keys")
+        throw new ApiException("Error getting MAC keys")
       }
     }
 
     var postUrl = "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
     macKey map { key =>
-      postUrl = "&wrkey=" + key
+      postUrl += "&wrkey=" + key.wrappedKey
     }
 
     var body = getExistingChunks(toUpdate, withMac)
@@ -97,7 +96,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       case other => {
         logger.error("Request failed. Response:\n{}", responseData)
         toUpdate.foreach(list => storage.updateError(now, list))
-        throw new UpdateException("Update request failed: HTTP Error=" + other)
+        throw new ApiException("Update request failed: HTTP Error=" + other)
       }
     }
 
@@ -118,9 +117,10 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     resp.mac.foreach(dataMac => {
       macKey.foreach(ourMac => {
+        // FIXME: MAC validation is failing
         logger.debug("MAC of request: {}", dataMac)
         val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
-        if (!validateMac(data.getBytes(), ourMac.clientKey, dataMac)) {
+        if (!validateMac(data.getBytes, ourMac.clientKey, dataMac)) {
           logger.error("MAC error on main request")
           throw new MacException("MAC error on main request")
         }
@@ -178,7 +178,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    * @param listName Optional. Lookup against a specific list. Use the list(s) from new() by default.
    * @returns Returns Option(list name) with matching list or None.
    */
-  def lookup(url: String, listName: String = ""): Option[String] = {
+  def lookup(url: String, listName: String = "", withMac: Boolean = false): Option[String] = {
     val candidates: Array[String] = if (!listName.isEmpty()) {
       Array(listName)
     } else {
@@ -188,10 +188,10 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     val generator = new ExpressionGenerator(url)
     val expressions = generator.expressions
     val hostKey = generator.hostKey
-    lookup_hostKey(candidates, expressions, hostKey)
+    lookup_hostKey(candidates, expressions, hostKey, withMac)
   }
 
-  def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String): Option[String] = {
+  def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
 
     // Local lookup
     val add_chunks = local_lookup_suffix(hostKey, expressions)
@@ -217,8 +217,10 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       }
     })
 
+    // filter out chunks that we already have full hashes for
+    val requestChunks = add_chunks.filter(chunk => hashesInStore.find(hash => hash.startsWith(chunk.prefix)).isEmpty)
     //ask for new hashes
-    val hashes = requestFullHashes(expressions)
+    val hashes = requestFullHashes(requestChunks, withMac)
     storage.addFullHashes(new DateTime(), hashes)
 
     expressions foreach (e => {
@@ -235,7 +237,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    *  Request full full hashes for specific prefixes from Google.
    */
-  def requestFullHashes(expressions: Seq[Expression]): Seq[Hash] = {
+  def requestFullHashes(chunks: Seq[Chunk], withMac: Boolean): Seq[Hash] = {
 
     /**
      * Return true if the wait time has passed or false otherwise
@@ -244,8 +246,15 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       status.updateTime.plus(wait).isBeforeNow()
     }
 
-    val toFetch = expressions filter (e => {
-      val errors = storage.getFullHashError(e.hexPrefix)
+    var macKey: Option[MacKey] = None
+    if (withMac) {
+      macKey = storage.getMacKey.orElse(requestMacKeys)
+      if (macKey.isEmpty) throw new MacException("Unable to get MacKey")
+    }
+
+    // TODO: better back off
+    val toFetch = chunks filter (c => {
+      val errors = storage.getFullHashError(c.prefix)
       val fetch = errors match {
         case None => true
         case Some(status) if (status.errors <= 2) => true
@@ -254,7 +263,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         case Some(status) => delay(status, Period.hours(2))
       }
       if (!fetch) {
-        logger.debug("Delaying fetch of full hash for expression: {} / {}", e, errors)
+        logger.debug("Delaying fetch of full hash for chunk: {} / {}", c, errors)
       }
       fetch
     })
@@ -264,51 +273,80 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       return Nil
     }
 
-    val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+    val sizeMap = mutable.Map[Int, ListBuffer[Chunk]]()
+    toFetch.foreach(c => {
+      sizeMap.getOrElseUpdate(c.prefix.length, ListBuffer[Chunk]()) += c
+    })
 
-    val prefix_list = toFetch.map(e => e.rawPrefix).reduce(_ ++ _)
-    // assume all prefixes are the same size
-    // TODO: split into batches of different sizes
-    /*
-     * # python equivalent
-     * prefix_sizes = {}  # prefix length -> list of prefixes.
-     * for prefix in prefixes:
-     *   prefix_sizes.setdefault(len(prefix), []).append(prefix)
-     */
-    val size = toFetch(0).rawPrefix.length
-    val header = (size + ":" + size * toFetch.size + "\n").getBytes()
-    println(prefix_list.length)
-    val body = header ++ prefix_list
+    var hashes = mutable.ListBuffer[Hash]()
+    for ((length, list) <- sizeMap) {
+      hashes ++= requestFullHashes(list.toList, length, macKey)
+    }
+
+    hashes.seq
+  }
+
+  def requestFullHashes(prefixes: List[Chunk], prefixLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
+    if (prefixes.isEmpty) return Nil
+
+    prefixes foreach (p => {
+      if (p.prefix.length != prefixLength) {
+        throw new ApiException("All prefixes must have length " + prefixLength)
+      }
+    })
+
+    val header = (prefixLength + ":" + prefixLength * prefixes.size + "\n").getBytes()
+    val body = header ++ prefixes.map(p => hex2Bytes(p.prefix)).reduce(_ ++ _)
     logger.trace("Full hash request body:\n{}", new String(body))
+
+    var url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+    macKey.foreach(key => url += "&wrkey=" + key.wrappedKey)
+
     val res = httpClient.POST(url, body, Map())
     res.statusCode(false) match {
-      case 200 => {
-        storage.clearFullhashErrors(toFetch)
-        parseFullHashes(res.asBytes())
-      }
+      case 200 => {}
       case 204 => logger.debug("No content returned for hash request"); res.consume; Nil
       case other => {
         res.consume
-        logger.error("Full hash request failed: {}", other)
-        toFetch foreach (e => {
-          // TODO: backoff mode
-          storage.fullHashError(new DateTime(), e.hexPrefix)
+        val msg = "Full hash request failed: " + other
+        logger.error(msg)
+        prefixes foreach (c => {
+          // TODO: back off mode
+          storage.fullHashError(new DateTime(), c.prefix)
         })
-        Nil
+        throw new ApiException(msg)
       }
+    }
+
+    try {
+      storage.clearFullhashErrors(prefixes)
+      parseFullHashes(res.asBytes(), macKey)
+    } catch {
+      case e: RekeyException => {
+        storage.delete_mac_keys
+        requestFullHashes(prefixes, prefixLength, macKey)
+      }
+      case other => throw other
     }
   }
 
-  def parseFullHashes(data: Array[Byte]): Seq[Hash] = {
+  def parseFullHashes(data: Array[Byte], macKey: Option[MacKey]): Seq[Hash] = {
     val parsed = FullHashParser.parse(data) match {
       case FullHashParser.Success(c, _) => Option(c)
       case x => logger.error("Error parsing full hash data: {}", x); return Nil
     }
 
     val hashes = parsed.map(env => {
-      if (env.rekey) { /* ignore for now */ }
-      env.mac.foreach(mac => {
-        // TODO check mac 
+      if (env.rekey) { throw new RekeyException }
+      macKey.foreach(mac => {
+        if (env.mac.isEmpty) throw new MacException("Empty MAC in full hash request")
+
+        val signed = data.dropWhile(_ != '\n').drop(1)
+        if (!validateMac(signed, mac.clientKey, env.mac.get)) {
+          val msg = "MAC validation failed for full hash data"
+          logger.error(msg)
+          throw new MacException(msg)
+        }
       })
 
       env.hashdata.map(full => {
@@ -332,7 +370,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     }
 
     // Step 3: filter out non-matching chunks
-    add_chunks = add_chunks.filter(c => expressions.find(e => e.hexPrefix.equals(c.prefix)).isDefined)
+    add_chunks = add_chunks.filter(c => expressions.find(e => e.hexHash.startsWith(c.prefix)).isDefined)
 
     if (add_chunks.isEmpty) {
       logger.debug("No prefix match for any host key");
@@ -396,6 +434,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     storage.deleteSubChunks(nums, list)
   }
 
+  @throws(classOf[ApiException])
   def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]) = {
     logger.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
@@ -406,7 +445,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         res.consume
         val msg = "Request to %s failed: %d".format(url, other)
         logger.error(msg)
-        throw new UpdateException(msg)
+        throw new ApiException(msg)
       }
     }
 
@@ -459,6 +498,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   def requestMacKeys: Option[MacKey] = {
+    logger.debug("Requesting mac keys")
     val url = "http://sb-ssl.google.com/safebrowsing/newkey"
     val c = new Client
     val resp = c.GET(url, Map(
@@ -474,6 +514,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   def processMacResponse(res: String): Option[MacKey] = {
+    logger.trace("MAC Response:\n{}", res)
     val Client = "^clientkey:(\\d+):(.*)$".r
     val Wrapped = "^wrappedkey:(\\d+):(.*)$".r
     var clientkey = ""
@@ -525,6 +566,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 }
 
-class UpdateException(msg: String) extends Exception(msg)
-class MacException(msg: String) extends UpdateException(msg)
-class ParsingException(msg: String) extends UpdateException(msg)
+class ApiException(msg: String) extends Exception(msg)
+class MacException(msg: String) extends ApiException(msg)
+class ParsingException(msg: String) extends ApiException(msg)
+class RekeyException extends ApiException("")

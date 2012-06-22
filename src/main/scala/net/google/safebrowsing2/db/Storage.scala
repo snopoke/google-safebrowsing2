@@ -40,7 +40,7 @@ trait Storage {
 
   def fullHashError(timestamp: ReadableInstant, prefix: String)
 
-  def clearFullhashErrors(expressions: Seq[Expression])
+  def clearFullhashErrors(expressions: Seq[Chunk])
 
   def getFullHashError(prefix: String): Option[Status]
 

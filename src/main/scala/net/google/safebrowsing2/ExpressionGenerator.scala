@@ -132,6 +132,6 @@ case class Expression(host: String, path: String) {
   val value = host + path
   lazy val rawHash = sha256(value)
   lazy val hexHash = bytes2Hex(rawHash)
-  lazy val rawPrefix = rawHash.take(4)
-  lazy val hexPrefix = hexHash.take(8)
+//  lazy val rawPrefix = rawHash.take(4)
+//  lazy val hexPrefix = hexHash.take(8)
 }

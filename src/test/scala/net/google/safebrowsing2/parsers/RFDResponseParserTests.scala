@@ -9,7 +9,7 @@ class RFDResponseParserTests {
 
   @Test
   def testWithMac = {
-    val response = "8798asf987as\n" +
+    val response = "m:lAcpo_sFRJ4lOC-zqLgR_uqGtsU=\n" +
       "n:123\n" +
       "i:google-list-123\n" +
       "u:http://redir1,mac1\n" +
@@ -27,7 +27,7 @@ class RFDResponseParserTests {
     val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", Option("mac1")), Redirect("http://redir2", None), AdDel(adl)))
     val cl2 = ChunkList("google-list-456", List(SubDel(List(5,6,7,8,9,12,13,14,15,16))))
     val clist = List(cl1, cl2)
-    assertThat(parsed.get, is(Resp(false, Some("8798asf987as"), 123, false, Some(clist))))
+    assertThat(parsed.get, is(Resp(false, Some("lAcpo_sFRJ4lOC-zqLgR_uqGtsU="), 123, false, Some(clist))))
   }
 
   @Test

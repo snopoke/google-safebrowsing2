@@ -3,6 +3,11 @@ package net.google.safebrowsing2.parsers
 import scala.util.parsing.combinator.RegexParsers
 import scala.collection.mutable
 
+/**
+ * Parser for Request For Data response body
+ * @see https://developers.google.com/safe-browsing/developers_guide_v2#HTTPResponseForDataBody
+ * Note: spec omits leading 'm:' for MAC key
+ */
 object RFDResponseParser extends RegexParsers {
   override def skipWhitespace = false
 
@@ -24,7 +29,7 @@ object RFDResponseParser extends RegexParsers {
   }
   def head = (rekey | mac) <~ space
   def rekey = "e:please" ~> "rekey"
-  def mac = """[a-z0-9]*""".r 
+  def mac = "m:"~>".+".r 
   def next = "n:" ~> number <~ space ^^ { _.toInt }
   def reset = "r:pleasereset" <~ space ^^ { r => true }
   def list = "i:" ~> listname ~ (listdata+) ^^ {
@@ -33,7 +38,7 @@ object RFDResponseParser extends RegexParsers {
   def number = """[0-9]*""".r
   def listname = """[a-z0-9\-]*""".r <~ space
   def listdata: Parser[ListData] = redirecturl | addelHead | subdelHead
-  def redirecturl = "u:" ~> url~opt(","~>mac) <~ space ^^ { case u ~ m => Redirect(u, m) }
+  def redirecturl = "u:" ~> url~opt(","~>".+".r) <~ space ^^ { case u ~ m => Redirect(u, m) }
   def addelHead = "ad:" ~> chunklist <~ space ^^ { ad => AdDel(ad.reduce((list, n) => list ::: n)) }
   def subdelHead = "sd:" ~> chunklist <~ space ^^ { sd => SubDel(sd.reduce((list, n) => list ::: n)) }
   def url = """([^, \n]+)""".r
