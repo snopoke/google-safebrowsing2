@@ -4,7 +4,6 @@ import java.sql.Connection
 import java.util.Date
 import scala.collection.mutable
 import javax.sql.DataSource
-import net.google.safebrowsing2.SafeBrowsing2._
 import util.JdbcTemplate
 import util.LiteDataSource
 import net.google.safebrowsing2.MacKey
@@ -14,6 +13,7 @@ import net.google.safebrowsing2.Status
 import org.joda.time.Period
 import org.joda.time.ReadableInstant
 import org.joda.time.DateTime
+import net.google.safebrowsing2.Expression
 
 /**
  * Base Storage class used to access the databse.
@@ -37,7 +37,7 @@ class DBI(jt: JdbcTemplate) extends Storage {
   
   def close = {
     if (!keepAll) {
-      execute("DELETE FROM full_hashes WHERE timestamp < ?", new Date().getTime() - FULL_HASH_TIME)
+      execute("DELETE FROM full_hashes WHERE timestamp < ?", new DateTime().minusMinutes(45))
     }
   }
 
@@ -349,8 +349,8 @@ class DBI(jt: JdbcTemplate) extends Storage {
     }
   }
 
-  override def clearFullhashErrors(prefixes: Seq[String]) = {
-    val params = prefixes.map(Seq(_))
+  override def clearFullhashErrors(expressions: Seq[Expression]) = {
+    val params = expressions.map(e => Seq(e.hexPrefix))
     executeBatch("DELETE FROM full_hashes_errors WHERE prefix = ?", params)
   }
 

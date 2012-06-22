@@ -12,26 +12,26 @@ import util.Logging
  * If you need to check more than 10,000 URLs a day, you need to use {@link net.google.safebrowsing2.SafeBrowsing2}
  *
  * @see http://code.google.com/apis/safebrowsing/lookup_guide.html
+ * @param apikey the Google Safe Browsing API key to use in any requests
+ * @param appName the name of the application doing the lookup e.g. "firefox"
+ * @param urlBase the base URL to use for the request. Defaults to "https://sb-ssl.google.com/safebrowsing/api/"
+ * @param pver the version of the Lookup API. Defaults to "3.0"
  */
-class Lookup(apikey: String) extends Logging {
+class Lookup(apikey: String, appName: String, urlBase: String, pver: String) extends Logging {
+  def this(apikey: String, appName: String) = this(apikey, appName, "https://sb-ssl.google.com/safebrowsing/api/", "3.0")
 
   val appver = "1.0"
 
-  /**
-   * Google Safe Browsing version. 3.0 by default
-   */
-  var pver = "3.0"
-  /* var to allow mock testing */
-  var httpClient = new Client
-  
+  val httpClient = new Client
+
   /**
    * Lookup a list URLs against the Google Safe Browsing v2 lists.
    *
    * @param urls
    * 	The list of URL's to check
    * @param delay
-   * 	Int indicating how long to delay between batches of 500 to avoid rate limiting by Google.
-   * 
+   * 	Int indicating how many seconds to delay between batches of 500 to avoid rate limiting by Google.
+   *
    * @return Map[String, String]
    * 	url -> {Google match}.
    * 	The possible list of values for {Google match} are:
@@ -53,16 +53,16 @@ class Lookup(apikey: String) extends Logging {
 
       val body = new StringBuffer(batch.size.toString)
       batch foreach (url => {
-        val canonical = canonicalUri(url)
+        val canonical = URLUtils.getInstance().canonicalizeURL(url)
         body.append("\n" + canonical)
         logger.debug("{} => {}", url, canonical)
       })
       logger.debug("BODY:\n{}\n\n", body)
 
-      val apiUrl = "https://sb-ssl.google.com/safebrowsing/api/lookup?client=perl&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+      val apiUrl = urlBase + "lookup?client=" + appName + "&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
       if (delay > 0 && !results.isEmpty) {
-        Thread.sleep(delay)
+        Thread.sleep(delay*1000)
       }
 
       val res = httpClient.POST(apiUrl, body.toString())
@@ -97,9 +97,5 @@ class Lookup(apikey: String) extends Logging {
     }
 
     results.toMap
-  }
-
-  def canonicalUri(url: String): String = {
-    URLUtils.getInstance().canonicalizeURL(url)
   }
 }

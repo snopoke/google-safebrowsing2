@@ -188,22 +188,16 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       lists
     }
 
-    var cleanurl = URLUtils.getInstance().canonicalizeURL(url)
-    val uri = new URL(cleanurl)
-    val domain = uri.getHost()
-    val hostKey = makeHostKey(domain)
-    lookup_hostKey(candidates, url, hashPrefix(hostKey))
+    val generator = new ExpressionGenerator(url)
+    val expressions = generator.expressions
+    val hostKey = generator.hostKey
+    lookup_hostKey(candidates, expressions, hostKey)
   }
 
-  def lookup_hostKey(lists: Seq[String], url: String, hostKey: String): Option[String] = {
-
-    val full_hashes = getFullHashes(url)
-
-    // Get the prefixes from the first 4 bytes (8 chars)
-    val full_hashes_prefix = full_hashes map (h => h.substring(0, 8))
+  def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String): Option[String] = {
 
     // Local lookup
-    val add_chunks = local_lookup_suffix(hostKey, full_hashes_prefix)
+    val add_chunks = local_lookup_suffix(hostKey, expressions)
     if (add_chunks.isEmpty) {
       logger.debug("No hit in local lookup")
       return None
@@ -217,8 +211,8 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
         hashesInStore ++= hashes
 
-        full_hashes foreach (h => {
-          if (hashes.find(_.equals(h)).isDefined) {
+        expressions foreach (e => {
+          if (hashes.find(_.equals(e.hexHash)).isDefined) {
             logger.debug("Full hash was found in storage")
             return Some(achunk.list)
           }
@@ -227,14 +221,14 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     })
 
     //ask for new hashes
-    val hashes = requestFullHashes(full_hashes_prefix)
+    val hashes = requestFullHashes(expressions)
     storage.addFullHashes(new DateTime(), hashes)
 
-    full_hashes foreach (fhash => {
-      val hash = hashes.find(h => h.hash.equals(fhash))
+    expressions foreach (e => {
+      val hash = hashes.find(h => h.hash.equals(e.hexHash))
       val list = hash.flatMap(h => lists.find(l => h.list.equals(l)))
       if (hash.isDefined && list.isDefined) {
-        logger.debug("Match for url {} in list {}", url, list.get)
+        logger.debug("Match for url {} in list {}", e.value, list.get)
         return list
       }
     })
@@ -244,7 +238,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
   /**
    *  Request full full hashes for specific prefixes from Google.
    */
-  def requestFullHashes(prefixes: Seq[String]): Seq[Hash] = {
+  def requestFullHashes(expressions: Seq[Expression]): Seq[Hash] = {
 
     /**
      * Return true if the wait time has passed or false otherwise
@@ -253,8 +247,8 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       status.updateTime.plus(wait).isBeforeNow()
     }
 
-    val toFetch = prefixes filter (prefix => {
-      val errors = storage.getFullHashError(prefix)
+    val toFetch = expressions filter (e => {
+      val errors = storage.getFullHashError(e.hexPrefix)
       val fetch = errors match {
         case None => true
         case Some(status) if (status.errors <= 2) => true
@@ -263,7 +257,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
         case Some(status) => delay(status, Period.hours(2))
       }
       if (!fetch){
-        logger.debug("Delaying fetch of full hash for prefix: {} / {}", prefix, errors)
+        logger.debug("Delaying fetch of full hash for expression: {} / {}", e, errors)
       }
       fetch
     })
@@ -275,7 +269,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     
     val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
-    val prefix_list = toFetch.map(p => hex2Bytes(p)).reduce(_ ++ _)
+    val prefix_list = toFetch.map(e => e.rawPrefix).reduce(_ ++ _)
     // assume all prefixes are the same size
     // TODO: split into batches of different sizes
     /*
@@ -284,7 +278,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
      * for prefix in prefixes:
      *   prefix_sizes.setdefault(len(prefix), []).append(prefix)
      */
-    val size = hex2Bytes(toFetch(0)).length
+    val size = toFetch(0).rawPrefix.length
     val header = (size + ":" + size*toFetch.size + "\n").getBytes()
     println(prefix_list.length)
     val body = header ++ prefix_list
@@ -299,9 +293,9 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       case other => {
         res.consume
         logger.error("Full hash request failed: {}", other)
-        toFetch foreach (p => {
+        toFetch foreach (e => {
           // TODO: backoff mode
-        	storage.fullHashError(new DateTime(), p)
+        	storage.fullHashError(new DateTime(), e.hexPrefix)
         })
         Nil
       }
@@ -330,7 +324,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  def local_lookup_suffix(suffix: String, fullHashPrefixes: Seq[String]): Seq[Chunk] = {
+  def local_lookup_suffix(suffix: String, expressions: Seq[Expression]): Seq[Chunk] = {
 
     // Step 1: get all add chunks for this host key
     // Do it for all lists
@@ -340,8 +334,8 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       return add_chunks
     }
 
-    // Step 3: filter out add_chunks not in prefix list
-    add_chunks = add_chunks.filter(c => fullHashPrefixes.contains(c.prefix))
+    // Step 3: filter out non-matching chunks
+    add_chunks = add_chunks.filter(c => expressions.find(e => e.hexPrefix.equals(c.prefix)).isDefined)
 
     if (add_chunks.isEmpty) {
       logger.debug("No prefix match for any host key");
@@ -364,106 +358,6 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     }
 
     add_chunks
-  }
-
-  /**
-   * Return all possible full hashes for a URL.
-   */
-  def getFullHashes(url: String): Seq[String] = {
-    val urls = canonical(url);
-    urls map (u => bytes2Hex(sha256(u)))
-  }
-
-  /**
-   * Find all canonical URLs for a URL.
-   */
-  def canonical(url: String): Seq[String] = {
-    val urls = new ListBuffer[String]()
-
-    val uri = new URI(URLUtils.getInstance().canonicalizeURL(url));
-    val domains = canonicalDomain(uri.getHost);
-    
-    var path = uri.getPath
-    if(uri.getQuery != null) 
-      path += "?" + uri.getQuery
-      
-    val paths = canonicalPath(path);
-
-    domains foreach (d => {
-      paths foreach (p => {
-        urls += "%s%s".format(d, p)
-      })
-    })
-
-    return urls.toList;
-  }
-
-  /**
-   * Find all canonical paths for a URL.
-   */
-  def canonicalPath(path: String): Seq[String] = {
-
-    val paths = mutable.MutableList[String](path)
-
-    if (path.contains("?")) {
-      paths += path.replaceAll("""\?.*$""", "")
-    }
-
-    val parts = path.split("""\/""").dropRight(1)
-    var previous = ""
-    breakable {
-      for (i <- 0 until parts.length) {
-        previous += parts(i) + "/"
-        paths += previous
-        if (paths.length >= 6) break
-      }
-    }
-    paths
-  }
-
-  /**
-   * Return a hash prefix as a HEX string. The size of the prefix is set to 4 bytes.
-   */
-  def hashPrefix(s: String): String = {
-    bytes2Hex(sha256(s).take(4))
-  }
-
-  /**
-   * Find all canonical domains for a domain.
-   */
-  def canonicalDomain(domain: String): Seq[String] = {
-
-    if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
-      // loose check for IP address, should be enough
-      return Seq(domain);
-    }
-
-    var parts = domain.split("""\.""")
-    parts = parts.takeRight(min(5, parts.length - 1))
-    
-    val domains = mutable.MutableList[String](domain)
-    while (parts.length >= 2) {
-      domains += parts.mkString(".")
-      parts = parts.drop(1)
-    }
-
-    domains.seq
-  }
-
-  /**
-   * Get host key for domain
-   */
-  def makeHostKey(domain: String): String = {
-
-    if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
-      // loose check for IP address, should be enough
-      return domain
-    }
-
-    val parts = domain.split("""\.""")
-    val hostKey = parts.takeRight(3).mkString(".")
-    logger.debug("HostKey: {} -> {}", domain, hostKey)
-    hostKey + "/" // Don't forget trailing slash
   }
 
   def getExistingChunks(lists: Array[String], withMac: Boolean): String = {
@@ -629,10 +523,4 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     logger.debug("Mac check: {} / {}", sig, digest)
     sig == digest
   }
-}
-
-object SafeBrowsing2 {
-
-  val FULL_HASH_TIME = 45 * 60 * 1000
-  val INTERVAL_FULL_HASH_TIME = "INTERVAL 45 MINUTE"
 }

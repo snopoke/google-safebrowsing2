@@ -6,6 +6,7 @@ import net.google.safebrowsing2.Hash
 import net.google.safebrowsing2.Chunk
 import net.google.safebrowsing2.Status
 import org.joda.time.ReadableInstant
+import net.google.safebrowsing2.Expression
 
 trait Storage {
 
@@ -39,7 +40,7 @@ trait Storage {
 
   def fullHashError(timestamp: ReadableInstant, prefix: String)
 
-  def clearFullhashErrors(prefix: Seq[String])
+  def clearFullhashErrors(expressions: Seq[Expression])
 
   def getFullHashError(prefix: String): Option[Status]
 

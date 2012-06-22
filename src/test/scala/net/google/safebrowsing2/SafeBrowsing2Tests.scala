@@ -146,105 +146,6 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   }
 
   @Test
-  def testCanonicalDomainSuffixes = {
-    val domain = sb2.makeHostKey("www.google.com")
-    assertThat(domain, is("www.google.com/"))
-  }
-
-  @Test
-  def testCanonicalDomainSuffixes_short = {
-    val domain = sb2.makeHostKey("google.com")
-    assertThat(domain, is("google.com/"))
-  }
-
-  @Test
-  def testCanonicalDomainSuffixes_long = {
-    val domain = sb2.makeHostKey("malware.testing.google.test")
-    assertThat(domain, is("testing.google.test/"))
-  }
-  
-  @Test
-  def testCanonicalDomain_long = {
-    val domains = sb2.canonicalDomain("a.b.c.d.e.f.g")
-    assertThat(domains.size, is(5))
-    assertTrue(domains.contains("a.b.c.d.e.f.g"))
-    assertTrue(domains.contains("c.d.e.f.g"))
-    assertTrue(domains.contains("d.e.f.g"))
-    assertTrue(domains.contains("e.f.g"))
-    assertTrue(domains.contains("f.g"))
-  }
-  
-  @Test
-  def testCanonicalDomain_short = {
-    val domains = sb2.canonicalDomain("d.e.f.g")
-    assertThat(domains.size, is(3))
-    assertTrue(domains.contains("d.e.f.g"))
-    assertTrue(domains.contains("e.f.g"))
-    assertTrue(domains.contains("f.g"))
-  }
-  
-  @Test
-  def testCanonicalPath = {
-    val paths = sb2.canonicalPath("/1/2.html?param=1")
-    assertThat(paths.size, is(4))
-    assertTrue(paths.contains("/1/2.html?param=1"))
-    assertTrue(paths.contains("/1/2.html"))
-    assertTrue(paths.contains("/1/"))
-    assertTrue(paths.contains("/"))
-  }
-  
-  @Test
-  def testCanonicalPath_long = {
-    val paths = sb2.canonicalPath("/1/2/3/4/5/6/7.html?param=1")
-    assertThat(paths.size, is(6))
-    assertTrue(paths.contains("/1/2/3/4/5/6/7.html?param=1"))
-    assertTrue(paths.contains("/1/2/3/4/5/6/7.html"))
-    assertTrue(paths.contains("/"))
-    assertTrue(paths.contains("/1/"))
-    assertTrue(paths.contains("/1/2/"))
-    assertTrue(paths.contains("/1/2/3/"))
-    assertTrue(paths.contains("/1/2/3/"))
-  }
-    
-  @Test
-  def testCanonical = {
-    val urls = sb2.canonical("http://a.b.c/1/2.html?param=1")
-    assertThat(urls.size, is (8))
-    assertTrue(urls.contains("a.b.c/1/2.html?param=1"))
-    assertTrue(urls.contains("a.b.c/1/2.html"))
-    assertTrue(urls.contains("a.b.c/"))
-    assertTrue(urls.contains("a.b.c/1/"))
-    assertTrue(urls.contains("b.c/1/2.html?param=1"))
-    assertTrue(urls.contains("b.c/1/2.html"))
-    assertTrue(urls.contains("b.c/"))
-    assertTrue(urls.contains("b.c/1/"))
-  }
-  
-  @Test
-  def testCanonical_long = {
-    val urls = sb2.canonical("http://a.b.c.d.e.f.g/1.html")
-    assertThat(urls.size, is (10))
-    assertTrue(urls.contains("a.b.c.d.e.f.g/1.html"))
-    assertTrue(urls.contains("a.b.c.d.e.f.g/"))
-    assertTrue(urls.contains("c.d.e.f.g/1.html"))
-    assertTrue(urls.contains("c.d.e.f.g/"))
-    assertTrue(urls.contains("d.e.f.g/1.html"))
-    assertTrue(urls.contains("d.e.f.g/"))
-    assertTrue(urls.contains("e.f.g/1.html"))
-    assertTrue(urls.contains("e.f.g/"))
-    assertTrue(urls.contains("f.g/1.html"))
-    assertTrue(urls.contains("f.g/"))
-  }
-
-  @Test
-  def testPrefix = {
-    val prefix = sb2.hashPrefix("abc")
-    assertThat(prefix.length, is(8))
-    val e: Array[Byte] = Array(0xBA, 0x78, 0x16, 0xBF).map(_.toByte)
-    assertThat(prefix, is(bytes2Hex(e)))
-  }
-
-  @Test
   def testParseFullHashes() = {
     val data = "list1:123:64\n" +
       byteString(64)
@@ -260,33 +161,36 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   
   @Test
   def testLocalLookupSuffix_noMatch = {
-    val addChunks = Seq(Chunk(123,"prefix", "hostkey", "listname", 0))
+    val e = Expression("www.test.com", "/1.html")
+    val addChunks = Seq(Chunk(123,"nonmatchingprefix", "hostkey", "listname", 0))
     when(storage.getAddChunks("suffix")).thenReturn(addChunks)
     
-    val chunks = sb2.local_lookup_suffix("suffix", Seq("prefix2"))
+    val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
     assertTrue(chunks.isEmpty)
   }
   
   @Test
   def testLocalLookupSuffix_matchInSub = {
-    val addChunks = Seq(Chunk(123,"prefix", "hostkey", "listname", 0))
-	val subChunks = Seq(Chunk(456,"prefix", "hostkey", "listname", 123))
+    val e = Expression("www.test.com", "/1.html")
+    val addChunks = Seq(Chunk(123, e.hexPrefix, "hostkey", "listname", 0))
+	val subChunks = Seq(Chunk(456, e.hexPrefix, "hostkey", "listname", 123))
     when(storage.getAddChunks("suffix")).thenReturn(addChunks)
     when(storage.getSubChunks("suffix")).thenReturn(subChunks)
     
-    val chunks = sb2.local_lookup_suffix("suffix", Seq("prefix"))
+    val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
     assertTrue(chunks.isEmpty)
   }
   
   @Test
   def testLocalLookupSuffix_match = {
-    val addChunks = Seq(Chunk(123,"prefix", "hostkey", "listname", 0),
-        Chunk(234,"prefix1", "hostkey", "listname", 0))
-	val subChunks = Seq(Chunk(456,"prefix", "hostkey", "listname", 123))
+    val e = Expression("www.test.com", "/1.html")
+    val addChunks = Seq(Chunk(123,"nonmatchingprefix", "hostkey", "listname", 0),
+        Chunk(234, e.hexPrefix, "hostkey", "listname", 0))
+	val subChunks = Seq(Chunk(456,"nonmatchingprefix", "hostkey", "listname", 123))
     when(storage.getAddChunks("suffix")).thenReturn(addChunks)
     when(storage.getSubChunks("suffix")).thenReturn(subChunks)
     
-    val chunks = sb2.local_lookup_suffix("suffix", Seq("prefix1"))
+    val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
     assertThat(chunks.size, is(1))
     assertThat(chunks(0).chunknum, is(234))
   }

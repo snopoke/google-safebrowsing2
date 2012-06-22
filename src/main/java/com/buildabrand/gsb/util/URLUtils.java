@@ -296,6 +296,7 @@ public class URLUtils {
 			
 		} catch (Exception e) {
 			e.printStackTrace();
+			// TODO handle exception
 			//throw new GSBException("Could not canonicalise URL: " + queryURL);
 		}
 		
