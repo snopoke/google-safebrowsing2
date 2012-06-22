@@ -9,14 +9,6 @@ import scala.util.control.Breaks.break
 import scala.util.control.Breaks.breakable
 import com.buildabrand.gsb.util.URLUtils
 import com.github.tototoshi.http.Client
-import Result.DATABASE_RESET
-import Result.INTERNAL_ERROR
-import Result.MAC_ERROR
-import Result.MAC_KEY_ERROR
-import Result.NO_UPDATE
-import Result.Result
-import Result.SERVER_ERROR
-import Result.SUCCESSFUL
 import net.google.safebrowsing2.parsers.DataParser
 import net.google.safebrowsing2.parsers.FullHashParser
 import net.google.safebrowsing2.parsers.RFDResponseParser
@@ -29,20 +21,10 @@ import net.google.safebrowsing2.db.DBI
 import scala.math.min
 import org.joda.time.DateTime
 import org.joda.time.Period
+import db.Storage
+import org.joda.time.Duration
 
-object Result extends Enumeration {
-  type Result = Value
-  val DATABASE_RESET = Value("DATABASE_RESET")
-  val MAC_ERROR = Value("MAC_ERROR")
-  val MAC_KEY_ERROR = Value("MAC_KEY_ERROR")
-  val INTERNAL_ERROR = Value("INTERNAL_ERROR") // internal/parsing error
-  val SERVER_ERROR = Value("SERVER_ERROR") // Server sent an error back
-  val NO_UPDATE = Value("NO_UPDATE") // no update (too early)
-  val NO_DATA = Value("NO_DATA") // no data sent
-  val SUCCESSFUL = Value("SUCCESSFUL") // data sent
-}
-
-class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
+class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
   val lists = Array(MALWARE, PHISHING)
@@ -50,7 +32,14 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
   var pver = "2.2"
   var httpClient: Client = new Client
 
-  def update(listName: String, force: Boolean = false, withMac: Boolean = false): Result = {
+  /**
+   * @param listName the list to update or null to update all lists
+   * @param force if true force the update ignoring wait times
+   * @param withMac if true request using Message Authentication Codes
+   * @return the number of seconds to wait before updating again
+   * @throws UpdateException
+   */
+  def update(listName: String, force: Boolean = false, withMac: Boolean = false): Int = {
 
     val candidates: Array[String] = if (listName == null || !listName.isEmpty()) {
       Array(listName)
@@ -59,11 +48,19 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     }
 
     val now = new DateTime()
+    var minUpdateWait = Int.MaxValue
     // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
       val info = storage.lastUpdate(listName)
       val tooEarly = !force && info.map(_.waitUntil.isAfter(now)).getOrElse(false)
       if (tooEarly) {
+
+        if (info.isDefined) {
+          val secs = new Duration(now, info.get.waitUntil).getStandardSeconds()
+          if (secs < minUpdateWait)
+            minUpdateWait = secs.toInt
+        }
+
         logger.debug("Too early to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
       } else {
         logger.debug("OK to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
@@ -73,15 +70,15 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
 
     if (toUpdate.isEmpty) {
       logger.debug("Too early to update any list");
-      return NO_UPDATE;
+      return minUpdateWait;
     }
 
     sys.exit()
-    
+
     var macKey: Option[MacKey] = None
     if (withMac) {
       macKey = getMacKeys orElse {
-        return MAC_KEY_ERROR;
+        throw new UpdateException("Error getting MAC keys")
       }
     }
 
@@ -98,21 +95,24 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     response.statusCode() match {
       case 200 => {}
       case other => {
-        logger.error("Request failed")
+        logger.error("Request failed. Response:\n{}", responseData)
         toUpdate.foreach(list => storage.updateError(now, list))
-        return SERVER_ERROR
+        throw new UpdateException("Update request failed: HTTP Error=" + other)
       }
     }
 
     val parseResult = RFDResponseParser.parse(responseData) match {
       case RFDResponseParser.Success(resp, _) => Option(resp)
-      case x => logger.error("Error parsing RFD response: " + x); return INTERNAL_ERROR
+      case x => {
+        logger.error("Error parsing RFD response: " + x);
+        throw new ParsingException("Error parsing response from server")
+      }
     }
 
     val resp = parseResult.get
     if (resp.rekey) {
       logger.debug("Re-key requested")
-      storage.delete_mac_keys()
+      storage.delete_mac_keys
       return update(listName, force, withMac)
     }
 
@@ -122,7 +122,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
         val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
         if (!validateMac(data.getBytes(), ourMac.clientKey, dataMac)) {
           logger.error("MAC error on main request")
-          return MAC_ERROR
+          throw new MacException("MAC error on main request")
         }
       })
     })
@@ -130,48 +130,45 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     if (resp.reset) {
       logger.debug("Database must be reset")
       toUpdate foreach (l => storage.reset(l))
-      return DATABASE_RESET
+      return 0
     }
 
-    var result = SUCCESSFUL
-    breakable {
+    try {
       resp.list foreach (list => {
         list foreach (chunklist => {
           chunklist.data foreach (d => {
             d match {
               case RFDResponseParser.Redirect(url, mac) => {
-                result = processRedirect(url, mac, chunklist.name, macKey)
-                if (result != SUCCESSFUL) break
+                processRedirect(url, mac, chunklist.name, macKey)
               }
               case RFDResponseParser.AdDel(adlist) => {
-                result = processDelAd(adlist, chunklist.name)
-                if (result != SUCCESSFUL) break
+                processDelAd(adlist, chunklist.name)
               }
               case RFDResponseParser.SubDel(sublist) => {
-                result = processDelSub(sublist, chunklist.name)
-                if (result != SUCCESSFUL) break
+                processDelSub(sublist, chunklist.name)
               }
             }
           })
         })
       })
+    } catch {
+      case e => {
+        toUpdate foreach (list => {
+          logger.error("Error updating list: " + list, e)
+          storage.updateError(now, list)
+        })
+        throw e
+      }
     }
 
     toUpdate foreach (list => {
-      result match {
-        case SUCCESSFUL => {
-          logger.debug("List update: [list={}] [wait={}]", list, resp.next)
-          storage.updated(now, resp.next, list)
-        }
-        case MAC_ERROR => {}
-        case other => {
-          logger.error("Error updating list: " + list + ", error: " + other)
-          storage.updateError(now, list)
-        }
-      }
+      logger.debug("List update: [list={}] [wait={}]", list, resp.next)
+      storage.updated(now, resp.next, list)
+      if (resp.next < minUpdateWait)
+        minUpdateWait = resp.next
     })
 
-    return result
+    minUpdateWait
   }
 
   /**
@@ -252,21 +249,21 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       val fetch = errors match {
         case None => true
         case Some(status) if (status.errors <= 2) => true
-        case Some(status) if (status.errors == 3) => delay(status, Period.minutes(30)) 
+        case Some(status) if (status.errors == 3) => delay(status, Period.minutes(30))
         case Some(status) if (status.errors == 4) => delay(status, Period.hours(1))
         case Some(status) => delay(status, Period.hours(2))
       }
-      if (!fetch){
+      if (!fetch) {
         logger.debug("Delaying fetch of full hash for expression: {} / {}", e, errors)
       }
       fetch
     })
 
-    if (toFetch.isEmpty){
+    if (toFetch.isEmpty) {
       logger.debug("Fetching of all full hashes has been delayed.")
       return Nil
     }
-    
+
     val url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
     val prefix_list = toFetch.map(e => e.rawPrefix).reduce(_ ++ _)
@@ -279,7 +276,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
      *   prefix_sizes.setdefault(len(prefix), []).append(prefix)
      */
     val size = toFetch(0).rawPrefix.length
-    val header = (size + ":" + size*toFetch.size + "\n").getBytes()
+    val header = (size + ":" + size * toFetch.size + "\n").getBytes()
     println(prefix_list.length)
     val body = header ++ prefix_list
     logger.trace("Full hash request body:\n{}", new String(body))
@@ -295,7 +292,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
         logger.error("Full hash request failed: {}", other)
         toFetch foreach (e => {
           // TODO: backoff mode
-        	storage.fullHashError(new DateTime(), e.hexPrefix)
+          storage.fullHashError(new DateTime(), e.hexPrefix)
         })
         Nil
       }
@@ -386,22 +383,20 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     body
   }
 
-  def processDelAd(nums: List[Int], list: String): Result = {
+  def processDelAd(nums: List[Int], list: String) = {
     logger.debug("Delete Add Chunks: {}", nums)
     storage.deleteAddChunks(nums, list)
 
     // Delete full hash as well
     storage.deleteFullHashes(nums, list)
-    return SUCCESSFUL
   }
 
-  def processDelSub(nums: List[Int], list: String): Result = {
+  def processDelSub(nums: List[Int], list: String) = {
     logger.debug("Delete Sub Chunks: {}", nums)
     storage.deleteSubChunks(nums, list)
-    return SUCCESSFUL
   }
 
-  def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]): Result = {
+  def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]) = {
     logger.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
 
@@ -409,32 +404,39 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
       case 200 => {}
       case other => {
         res.consume
-        logger.error("Request to {} failed: {}", url, other)
-        return SERVER_ERROR
+        val msg = "Request to %s failed: %d".format(url, other)
+        logger.error(msg)
+        throw new UpdateException(msg)
       }
     }
-    
+
     val data = res.asBytes()
 
     macKey foreach { key =>
       hmac match {
         case Some(x) => {
           if (!validateMac(data, key.clientKey, x)) {
-            logger.error("MAC error on redirection: MAC validation failed")
+            val msg = "MAC validation failed for redirection url: " + url
+            logger.error(msg)
             logger.debug("Length of data: " + data.length)
-            return MAC_ERROR
+            throw new MacException(msg)
           }
         }
         case _ => {
-          logger.error("MAC error on redirection: redirect MAC empty")
-          return MAC_ERROR
+          val msg = "MAC key empty for redirection url: " + url
+          logger.error(msg)
+          throw new MacException(msg)
         }
       }
     }
 
     val parsed = DataParser.parse(data) match {
       case DataParser.Success(c, _) => Option(c)
-      case x => logger.error("Error parsing redirect data: {}", x); return INTERNAL_ERROR
+      case x => {
+        val msg = "Error parsing redirect data: " + x
+        logger.error(msg);
+        throw new ParsingException(msg)
+      }
     }
 
     parsed.get foreach (l => {
@@ -443,12 +445,10 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
         case s: DataParser.SubHead => storage.addChunks_s(s.chunknum, s.host, s.pairs, listName)
       }
     })
-
-    return SUCCESSFUL
   }
 
   def getMacKeys: Option[MacKey] = {
-    val keys = storage.getMacKey()
+    val keys = storage.getMacKey
     keys orElse ({
       val key = requestMacKeys
       key map { k =>
@@ -524,3 +524,7 @@ class SafeBrowsing2(apikey: String, storage: DBI) extends Logging {
     sig == digest
   }
 }
+
+class UpdateException(msg: String) extends Exception(msg)
+class MacException(msg: String) extends UpdateException(msg)
+class ParsingException(msg: String) extends UpdateException(msg)

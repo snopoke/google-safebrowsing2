@@ -101,23 +101,21 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     when(resp.statusCode()).thenReturn(200)
     when(resp.asBytes()).thenReturn(data.getBytes())
 
-    val result = sb2.processRedirect("url", None, "list", None)
-    assertThat(result, is(Result.SUCCESSFUL))
+    sb2.processRedirect("url", None, "list", None)
     verify(storage).addChunks_a(6, "090A0B0C", List("0101", "0202"), "list")
     verify(storage).addChunks_s(3, "01020304", List((8, "")), "list")
   }
 
-  @Test
+  @Test(expected = classOf[UpdateException])
   def testProcessRedirect_badStatuScode = {
     val resp = mock[Response]
     when(sb2.httpClient.GET("http://url")).thenReturn(resp)
     when(resp.statusCode()).thenReturn(400)
 
     val result = sb2.processRedirect("url", None, "list", None)
-    assertThat(result, is(Result.SERVER_ERROR))
   }
 
-  @Test
+  @Test(expected = classOf[MacException])
   def testProcessRedirect_missingMac = {
     val data = "a:6:2:9\n" +
       new String(Array(9, 10, 11, 12, 2, 1, 1, 2, 2): Array[Byte])
@@ -126,7 +124,6 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     when(resp.statusCode()).thenReturn(200)
 
     val result = sb2.processRedirect("url", None, "list", Some(MacKey("", "")))
-    assertThat(result, is(Result.MAC_ERROR))
   }
   
   @Test
@@ -142,7 +139,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     val hmac = Some(getMac(data.getBytes(), "clientkey"))
     
     val result = sb2.processRedirect("url", hmac, "list", Some(MacKey("clientkey", "")))
-    assertThat(result, is(Result.SUCCESSFUL))
+    verify(storage).addChunks_a(6, "090A0B0C", List("0101", "0202"), "list")
   }
 
   @Test
