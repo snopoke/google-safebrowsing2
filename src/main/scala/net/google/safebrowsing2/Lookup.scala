@@ -1,4 +1,20 @@
+/* 
+ * Copyright 2012 Simon Kelly
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package net.google.safebrowsing2
+
 import org.slf4j.LoggerFactory
 import com.github.tototoshi.http.Client
 import scala.collection.mutable
@@ -40,7 +56,7 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
    * 		"phishing",
    * 		"malware,phishing" (match both lists),
    *  		"error[: XXX]" (XXX is HTTP error code if relevant )
-   *  
+   *
    *  Java compatibility method
    */
   def jlookup(urls: Array[String], delay: Int = 0): java.util.Map[String, String] = {
@@ -85,7 +101,7 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
       val apiUrl = urlBase + "lookup?client=" + appName + "&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
 
       if (delay > 0 && !results.isEmpty) {
-        Thread.sleep(delay*1000)
+        Thread.sleep(delay * 1000)
       }
 
       val res = httpClient.POST(apiUrl, body.toString())
