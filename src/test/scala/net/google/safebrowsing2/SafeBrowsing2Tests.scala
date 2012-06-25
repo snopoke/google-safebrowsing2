@@ -197,9 +197,10 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   
   @Test
   def testParseFullHashes_macPass = {
-    val data = getMac(byteString(64).getBytes(),"clientkey") + "\nlist1:123:64\n" +
+    val data = "list1:123:64\n" +
       byteString(64)
-    val hashes = sb2.parseFullHashes(data.getBytes(), Some(MacKey("clientkey","wrappedkey")))
+    val sig = getMac(data.getBytes(),"clientkey") 
+    val hashes = sb2.parseFullHashes((sig + "\n" + data).getBytes(), Some(MacKey("clientkey","wrappedkey")))
   }
 
   @Test

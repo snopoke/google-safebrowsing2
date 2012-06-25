@@ -41,9 +41,6 @@ object FullHashParser extends BinaryParsers {
   def parse(in: String) = super.parseAll(body, in)
   def parse(bytes: Seq[Byte]) = super.parseAll(body, new ByteReader(bytes))
   
-  def loalpha(e: Elem) = e > 96 && e < 123
-  def digit(e: Elem) = e > 47 && e < 58
-  
   def body = (data | rekey) ^^ {b =>
     b match {
       case e: Envelope => e
@@ -53,7 +50,7 @@ object FullHashParser extends BinaryParsers {
   def data = opt(mac)~rep1(hashentry) ^^ {
     case m~h => Envelope(false, m, h)
   } 
-  def mac = takeWhile(acceptIf(e => loalpha(e) || digit(e))(el => "Unexpected "+el)) <~ lf ^^ {m => 
+  def mac = takeWhile(acceptIf(e => e != ':' && e != '\n')(el => "Unexpected "+el)) <~ lf ^^ {m => 
     toString(m)
   }
   def rekey = accept("e:pleaserekey".getBytes.toList) <~ lf ^^ {_ => "rekey"}
