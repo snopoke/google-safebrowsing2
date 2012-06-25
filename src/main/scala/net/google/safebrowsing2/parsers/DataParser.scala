@@ -20,91 +20,95 @@ import util.Helpers._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
 object DataParser extends BinaryParsers {
-  
-    case class AdHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
-    lazy val host = bytes2Hex(data.take(4))
+
+  case class AddChunk(chunknum: Int, hashlen: Int, data: Array[Byte]) {
+    lazy val hostkey = bytes2Hex(data.take(4))
     lazy val count = if (data.length > 4) data(4).toInt else 0
-    
+
     /**
-     * count = 0 -> no PREFIX
+     * count = 0 -> no PREFIX (special case: PREFIX = HOSTKEY)
      * count = N -> N PREFIXes
-     * 
+     *
      * PREFIX length = hashlen
      */
-    lazy val prefixes:List[String] = if(count == 0) Nil else {
+    lazy val prefixes: List[String] = if (count == 0) List(hostkey) else {
       (0 until count toList) map { i =>
-        val start = 5+(hashlen*i)
-        bytes2Hex(data.slice(start, start+hashlen).toArray)
+        val start = 5 + (hashlen * i)
+        bytes2Hex(data.slice(start, start + hashlen).toArray)
       }
     }
-    
-     override def equals(that: Any): Boolean = that match {
-      case a: AdHead => {a.chunknum == chunknum && 
-        a.count == count &&
-        a.hashlen == hashlen && 
-    	a.host == host &&
-    	a.data.deep.equals(data.deep)
+
+    override def equals(that: Any): Boolean = that match {
+      case a: AddChunk => {
+        a.chunknum == chunknum &&
+          a.count == count &&
+          a.hashlen == hashlen &&
+          a.hostkey == hostkey &&
+          a.data.deep.equals(data.deep)
       }
       case _ => false
     }
-     
-     override def toString = {
-       "AdHead(%d,%d,%s)".format(chunknum, hashlen, bytes2Hex(data))
-     }
+
+    override def toString = {
+      "AdHead(%d,%d,%s)".format(chunknum, hashlen, bytes2Hex(data))
+    }
   }
-  
-  case class SubHead(chunknum: Int, hashlen: Int, data: Array[Byte]) {
-    lazy val host = bytes2Hex(data.take(4))
+
+  case class SubChunk(chunknum: Int, hashlen: Int, data: Array[Byte]) {
+    lazy val hostkey = bytes2Hex(data.take(4))
     lazy val count = if (data.length > 4) data(4).toInt else 0
-    
+
     /**
-     * count = 0 -> only one ADDCHUNKNUM, no PREFIX
+     * count = 0 -> only one ADDCHUNKNUM, PREFIX = HOSTKEY
      * count = N -> N (ADDCHUNKNUM, PREFIX) pairs
-     * 
+     *
      * ADDCHUNKNUM length = 4
      * PREFIX length = hashlen
      */
-    lazy val pairs:List[(Int,String)] = if(count == 0) List((toInt(data.slice(5,9)), "")) else {
+    lazy val pairs: List[(Int, String)] = if (data.length < 9) Nil
+    else if (count == 0) List((toInt(data.slice(5, 9)), hostkey))
+    else {
       (0 until count toList) map { i =>
-        val start = 5+((hashlen+4)*i)
+        val start = 5 + ((hashlen + 4) * i)
         val prefixStart = start + 4
         val addchunknum = toInt(data.slice(start, prefixStart))
-        val prefix = bytes2Hex(data.slice(prefixStart, prefixStart+hashlen))
+        val prefix = bytes2Hex(data.slice(prefixStart, prefixStart + hashlen))
         (addchunknum, prefix)
       }
     }
-    
+
     override def equals(that: Any): Boolean = that match {
-      case s: SubHead => {s.chunknum == chunknum && 
-        s.count == count &&
-        s.hashlen == hashlen && 
-    	s.host == host &&
-    	s.data.deep.equals(data.deep)
+      case s: SubChunk => {
+        s.chunknum == chunknum &&
+          s.count == count &&
+          s.hashlen == hashlen &&
+          s.hostkey == hostkey &&
+          s.data.deep.equals(data.deep)
       }
       case _ => false
     }
-    
+
     override def toString = {
-       "SubHead(%d,%d,%s)".format(chunknum, hashlen, bytes2Hex(data))
-     }
+      "SubHead(%d,%d,%s)".format(chunknum, hashlen, bytes2Hex(data))
+    }
   }
-  
+
   def parse(in: String) = super.parseAll(data, in)
   def parse(bytes: Seq[Byte]) = super.parseAll(data, new ByteReader(bytes))
-  
-  def data = (addHead | subHead)+ 
 
-  def addHead = elem('a')~colon ~> head ^^ {
-    case cnum~s1~hlen~s2~data => AdHead(asciiInt(cnum), asciiInt(hlen), data.toArray)
+  def data = (addHead | subHead)+
+
+  def addHead = elem('a') ~ colon ~> head ^^ {
+    case cnum ~ s1 ~ hlen ~ s2 ~ data => AddChunk(asciiInt(cnum), asciiInt(hlen), data.toArray)
   }
-  def subHead = elem('s')~colon ~> head ^^ {
-    case cnum~s1~hlen~s2~data => SubHead(asciiInt(cnum), asciiInt(hlen), data.toArray)
+  def subHead = elem('s') ~ colon ~> head ^^ {
+    case cnum ~ s1 ~ hlen ~ s2 ~ data => SubChunk(asciiInt(cnum), asciiInt(hlen), data.toArray)
   }
-  def head = takeUntil(colon)~colon~takeUntil(colon)~colon~chunkl
-  def chunkl = takeUntil(lf)<~lf >> {
-    n => take(Integer.valueOf(toString(n))) 
+  def head = takeUntil(colon) ~ colon ~ takeUntil(colon) ~ colon ~ chunkl
+  def chunkl = takeUntil(lf) <~ lf >> {
+    n => take(Integer.valueOf(toString(n)))
   }
-  
+
   def colon = elem(':')
   def lf = elem('\n')
 }

@@ -39,10 +39,10 @@ class DataParserTests {
     }
     
     assertTrue("Parsing failed", parsed.isDefined)
-    val expected = List(AdHead(4,5,"abcd0".getBytes()), 
-        AdHead(6,2,"cded2abcd".getBytes()), 
-        SubHead(3,2,"45sd0789a".getBytes()), 
-        SubHead(3,2,"45sd24567MN1234PQ".getBytes()))
+    val expected = List(AddChunk(4,5,"abcd0".getBytes()), 
+        AddChunk(6,2,"cded2abcd".getBytes()), 
+        SubChunk(3,2,"45sd0789a".getBytes()), 
+        SubChunk(3,2,"45sd24567MN1234PQ".getBytes()))
     assertThat(parsed.get, is(expected))
   }
   
@@ -68,11 +68,29 @@ class DataParserTests {
     assertTrue("Parsing failed", parsed.isDefined)
     assertThat(parsed.get.size, is(1))
     
-    // AdHead with count = 0
-    val add = parsed.get(0).asInstanceOf[AdHead]
-    assertThat(add.host, is("090A0B0C"))
+    // AddChunk with count = 0
+    val add = parsed.get(0).asInstanceOf[AddChunk]
+    assertThat(add.hostkey, is("090A0B0C"))
     assertThat(add.count, is(0))
-    assertThat(add.prefixes, is(Nil:List[String]))
+    assertThat(add.prefixes, is(List("090A0B0C")))
+  }  
+  
+  @Test
+  def testParse_addEmpty = {
+    val data = "a:4:5:0\n"
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+    
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+    
+    // AddChunk with count = 0
+    val add = parsed.get(0).asInstanceOf[AddChunk]
+    assertThat(add.hostkey, is(""))
+    assertThat(add.count, is(0))
+    assertThat(add.prefixes, is(List("")))
   }  
   
   @Test
@@ -87,9 +105,9 @@ class DataParserTests {
     assertTrue("Parsing failed", parsed.isDefined)
     assertThat(parsed.get.size, is(1))
     
-    // AdHead with count = 2
-    val add = parsed.get(0).asInstanceOf[AdHead]
-    assertThat(add.host, is("090A0B0C"))
+    // AddChunk with count = 2
+    val add = parsed.get(0).asInstanceOf[AddChunk]
+    assertThat(add.hostkey, is("090A0B0C"))
     assertThat(add.count, is(2))
     assertThat(add.prefixes, is(List("0304","0506")))
   }
@@ -106,11 +124,29 @@ class DataParserTests {
     assertTrue("Parsing failed", parsed.isDefined)
     assertThat(parsed.get.size, is(1))
     
-    // SubHead with count = 0
-    val sub = parsed.get(0).asInstanceOf[SubHead]
-    assertThat(sub.host, is("090A0B0C"))
+    // SubChunk with count = 0
+    val sub = parsed.get(0).asInstanceOf[SubChunk]
+    assertThat(sub.hostkey, is("090A0B0C"))
     assertThat(sub.count, is(0))
-    assertThat(sub.pairs, is(List((6,""))))
+    assertThat(sub.pairs, is(List((6,"090A0B0C"))))
+  }
+  
+  @Test
+  def testParse_subEmpty = {
+    val data = "s:3:2:0\n"
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+    
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+    
+    // SubChunk with count = 0
+    val sub = parsed.get(0).asInstanceOf[SubChunk]
+    assertThat(sub.hostkey, is(""))
+    assertThat(sub.count, is(0))
+    assertTrue(sub.pairs.isEmpty)
   }
   
   @Test
@@ -125,9 +161,9 @@ class DataParserTests {
     assertTrue("Parsing failed", parsed.isDefined)
     assertThat(parsed.get.size, is(1))
     
-    // SubHead with count = 2
-    val sub = parsed.get(0).asInstanceOf[SubHead]
-    assertThat(sub.host, is("090A0B0C"))
+    // SubChunk with count = 2
+    val sub = parsed.get(0).asInstanceOf[SubChunk]
+    assertThat(sub.hostkey, is("090A0B0C"))
     assertThat(sub.count, is(2))
     assertThat(sub.pairs, is(List((256,"0101"), (65536, "0F0F"))))
   }

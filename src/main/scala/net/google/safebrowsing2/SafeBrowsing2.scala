@@ -494,8 +494,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     parsed.get foreach (l => {
       l match {
-        case a: DataParser.AdHead => storage.addChunks_a(a.chunknum, a.host, a.prefixes, listName)
-        case s: DataParser.SubHead => storage.addChunks_s(s.chunknum, s.host, s.pairs, listName)
+        case a: DataParser.AddChunk => storage.addChunks_a(a.chunknum, a.hostkey, a.prefixes, listName)
+        case s: DataParser.SubChunk => storage.addChunks_s(s.chunknum, s.hostkey, s.pairs, listName)
       }
     })
   }

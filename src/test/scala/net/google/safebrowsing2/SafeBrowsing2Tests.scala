@@ -122,7 +122,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
     sb2.processRedirect("url", None, "list", None)
     verify(storage).addChunks_a(6, "090A0B0C", List("0101", "0202"), "list")
-    verify(storage).addChunks_s(3, "01020304", List((8, "")), "list")
+    verify(storage).addChunks_s(3, "01020304", List((8, "01020304")), "list")
   }
 
   @Test(expected = classOf[ApiException])
