@@ -265,16 +265,16 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
       execute(addQuery, "", "", chunknum, list)
     }
   }
-
-  override def getAddChunks(hostkey: String): Seq[Chunk] = {
-    query("SELECT * FROM a_chunks WHERE hostkey = ?", hostkey).seq(row =>
+  
+  override def getChunksForHostKey(hostkey: String): Seq[Chunk] = {
+    query("""SELECT * from a_chunks a LEFT OUTER JOIN s_chunks s 
+    		ON s.list = a.list
+    		AND s.hostkey = a.hostkey
+    		AND s.add_num = a.num
+    		AND s.prefix = a.prefix
+    		WHERE s.num IS NULL
+    		AND a.hostkey = ?""", hostkey).seq(row =>
       Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), -1)
-    )
-  }
-
-  override def getSubChunks(hostkey: String): Seq[Chunk] = {
-    query("SELECT * FROM s_chunks WHERE hostkey = ?", hostkey).seq(row =>
-      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), row.getInt("add_num"))
     )
   }
 

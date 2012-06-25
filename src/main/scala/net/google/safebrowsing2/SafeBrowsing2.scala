@@ -392,40 +392,21 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  def local_lookup_suffix(suffix: String, expressions: Seq[Expression]): Seq[Chunk] = {
+  def local_lookup_suffix(host_key: String, expressions: Seq[Expression]): Seq[Chunk] = {
 
-    // Step 1: get all add chunks for this host key
-    // Do it for all lists
-    var add_chunks = storage.getAddChunks(suffix)
-    if (add_chunks.isEmpty) { // no match
-      logger.debug("No host key");
-      return add_chunks
+    var chunks = storage.getChunksForHostKey(host_key)
+    if (chunks.isEmpty) {
+      logger.debug("No un-subbed host key");
+      return Nil
     }
-
-    // Step 3: filter out non-matching chunks
-    add_chunks = add_chunks.filter(c => expressions.find(e => e.hexHash.startsWith(c.prefix)).isDefined)
-
-    if (add_chunks.isEmpty) {
+    
+    chunks = chunks.filter(c => expressions.find(e => e.hexHash.startsWith(c.prefix)).isDefined)
+    
+    if (chunks.isEmpty) {
       logger.debug("No prefix match for any host key");
-      return add_chunks
     }
-
-    // Step 4: get all sub chunks for this host key
-    val sub_chunks = storage.getSubChunks(suffix)
-
-    // remove all add_chunks that occur in the list of sub_chunks
-    add_chunks = add_chunks.filter(c => {
-      sub_chunks.find(sc =>
-        c.chunknum == sc.addChunknum &&
-          c.list.equals(sc.list) &&
-          c.prefix.equals(sc.prefix)).isEmpty
-    })
-
-    if (add_chunks.isEmpty) {
-      logger.debug("All add_chunks have been removed by sub_chunks");
-    }
-
-    add_chunks
+    
+    chunks
   }
 
   def getExistingChunks(lists: Array[String], withMac: Boolean): String = {

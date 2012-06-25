@@ -29,10 +29,8 @@ trait Storage {
   def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int,String)], list: String)
 
   def addChunks_a(chunknum: Int, hostkey: String, prefixes: Seq[String], list: String)
-
-  def getAddChunks(hostkey: String): Seq[Chunk]
-
-  def getSubChunks(hostkey: String): Seq[Chunk]
+  
+  def getChunksForHostKey(hostkey: String): Seq[Chunk]
 
   def getAddChunksNums(list: String): Seq[Int]
 
