@@ -24,3 +24,14 @@ libraryDependencies ++= Seq(
 )
 
 testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")
+
+resolvers <<= (resolvers) { r =>
+  (Option(System.getenv("SBT_PROXY_REPO")) map { url =>
+    Seq("proxy-repo" at url)
+  } getOrElse {
+    r ++ Seq(
+      "scala-tools" at "http://scala-tools.org/repo-releases/",
+      "maven" at "http://repo1.maven.org/maven2/"
+    )
+  })
+}
