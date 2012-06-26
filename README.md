@@ -5,7 +5,7 @@ This project implements the [Google Safebrowsing API v2](https://developers.goog
 ## Usage in Scala
 ### Safe Browsing API
 	val apikey = "123456"
-	val storage = new MySQL(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "pass"))
+	val storage = new MySQL(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "pass"), "gsb2_")
 	val sb2 = new SafeBrowsing2(apikey, storage)
 	
 	// update database
@@ -32,7 +32,7 @@ Outputs:
 ## Usage in Java
 ### Safe Browsing API
 	String apikey = "123456";
-	Storage storage = JavaHelper.buildStorageMySQL("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "password");
+	Storage storage = JavaHelper.buildStorageMySQL("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "password", "gsb2_");
 	SafeBrowsing2 sb2 = new SafeBrowsing2(apikey, storage);
 	
 	// update the database
@@ -51,9 +51,12 @@ Outputs:
 	}
 
 ## Database support
-Currently only MySQL and generic SQL are supported.
+The following databases are currently supported:
+* MySQL
+* MS SQL
+* HSQLDB
 
-New Storage classes can be added by extending the net.google.safebrowsing2.Storage trait. 
+New Storage classes can be added by extending the net.google.safebrowsing2.db.DBI class or the net.google.safebrowsing2.db.Storage trait. 
  
 ## Attributions
 * The is based off Julien Sobrier's [Net-Google-SafeBrowsing2](https://github.com/juliensobrier/Net-Google-SafeBrowsing2) perl module.

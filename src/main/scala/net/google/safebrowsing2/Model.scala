@@ -21,6 +21,6 @@ import org.joda.time.Period
 import org.joda.time.DateTime
 
 case class Hash(chunknum: Int, hash: String, list: String)
-case class Chunk(chunknum: Int, prefix: String, hostkey: String, list: String, addChunknum: Int)
+case class Chunk(chunknum: Int, prefix: String, hostkey: String, list: String)
 case class MacKey(clientKey: String, wrappedKey: String)
-case class Status(val lastAttempt: DateTime, val lastSuccess: DateTime, nextAttempt: DateTime, val errors: Int)
+case class Status(val lastAttempt: DateTime, val lastSuccess: Option[DateTime], nextAttempt: DateTime, val errors: Int)

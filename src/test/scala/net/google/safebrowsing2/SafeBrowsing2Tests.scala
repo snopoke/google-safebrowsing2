@@ -206,7 +206,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     @Test
   def testLocalLookupSuffix_noMatch = {
     val e = Expression("www.test.com", "/1.html")
-    val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname", 0))
+    val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"))
     when(storage.getChunksForHostKey("hostkey")).thenReturn(addChunks)
 
     val chunks = sb2.local_lookup_suffix("hostkey", Seq(e))
@@ -216,8 +216,8 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   @Test
   def testLocalLookupSuffix_match = {
     val e = Expression("www.test.com", "/1.html")
-    val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname", 0),
-      Chunk(234, e.hexHash.take(4), "hostkey", "listname", 0))
+    val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"),
+      Chunk(234, e.hexHash.take(4), "hostkey", "listname"))
     when(storage.getChunksForHostKey("suffix")).thenReturn(addChunks)
 
     val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
@@ -227,8 +227,8 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   
   @Test
   def testRequestFullHash = {
-    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname", 0),
-      Chunk(123, "11221133", "hostkey", "listname", 0))
+    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname"),
+      Chunk(123, "11221133", "hostkey", "listname"))
     val data = "list1:123:64\n" +
       byteString(64)
     when(storage.getFullHashError(anyM(classOf[String]))).thenReturn(None)
@@ -245,8 +245,8 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
   @Test
   def testRequestFullHash_differentSizes = {
-    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname", 0),
-      Chunk(123, "112211334455", "hostkey", "listname", 0))
+    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname"),
+      Chunk(123, "112211334455", "hostkey", "listname"))
 
     when(storage.getFullHashError(anyM(classOf[String]))).thenReturn(None)
     val response = mock[Response]

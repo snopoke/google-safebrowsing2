@@ -231,7 +231,7 @@ trait JdbcOperations extends Logging {
     /**
      * Batch update
      */
-    def executeBatch(q: String, argSeq: Seq[Seq[Any]]): Unit = execute(q, { ps: PreparedStatement =>
+    def executeBatch(q: String, argSeq: Seq[Seq[Any]]): Unit = executePsc(q, { ps: PreparedStatement =>
         for (params <- argSeq) {
             ps.setParams(params)
             ps.addBatch()

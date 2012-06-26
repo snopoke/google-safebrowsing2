@@ -63,7 +63,7 @@ trait Storage {
 
   def addMacKey(key: MacKey)
 
-  def delete_mac_keys
+  def deleteMacKeys
 
   def reset(list: String)
   

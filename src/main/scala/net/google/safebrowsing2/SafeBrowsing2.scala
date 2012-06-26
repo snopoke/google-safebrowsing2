@@ -132,7 +132,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     val resp = parseResult.get
     if (resp.rekey) {
       logger.debug("Re-key requested")
-      storage.delete_mac_keys
+      storage.deleteMacKeys
       return update(listName, force, withMac)
     }
 
@@ -359,7 +359,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       parseFullHashes(res.asBytes(), macKey)
     } catch {
       case e: RekeyException => {
-        storage.delete_mac_keys
+        storage.deleteMacKeys
         requestFullHashes(prefixes, prefixLength, macKey)
       }
       case other => throw other

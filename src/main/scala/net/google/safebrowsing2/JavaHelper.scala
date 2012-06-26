@@ -21,30 +21,43 @@ import util.LiteDataSource
 import db.DBI
 import java.sql.Connection
 import javax.sql.DataSource
+import net.google.safebrowsing2.db.MSSQL
 
 object JavaHelper {
 
-  def buildStorageMySQL(url: String, username: String, password: String): Storage = {
-    new MySQL(LiteDataSource.driverManager(url, username, password))
+  def buildStorageMySQL(url: String, username: String, password: String, tablePrefix: String): Storage = {
+    new MySQL(LiteDataSource.driverManager(url, username, password), tablePrefix)
   }
   
-  def buildStorageMySQL(connection: Connection): Storage = {
-    new MySQL(LiteDataSource.singleConnection(connection))
+  def buildStorageMySQL(connection: Connection, tablePrefix: String): Storage = {
+    new MySQL(LiteDataSource.singleConnection(connection), tablePrefix)
   }
   
-  def buildStorageMySQL(dataSource: DataSource): Storage = {
-    new MySQL(dataSource)
+  def buildStorageMySQL(dataSource: DataSource, tablePrefix: String): Storage = {
+    new MySQL(dataSource, tablePrefix)
   }
   
-  def buildStorageGeneric(url: String, username: String, password: String): Storage = {
-    new DBI(LiteDataSource.driverManager(url, username, password))
+  def buildStorageMSSQL(url: String, username: String, password: String, tablePrefix: String): Storage = {
+    new MSSQL(LiteDataSource.driverManager(url, username, password), tablePrefix)
   }
   
-  def buildStorageGeneric(connection: Connection): Storage = {
-    new DBI(LiteDataSource.singleConnection(connection))
+  def buildStorageMSSQL(connection: Connection, tablePrefix: String): Storage = {
+    new MSSQL(LiteDataSource.singleConnection(connection), tablePrefix)
   }
   
-  def buildStorageGeneric(dataSource: DataSource): Storage = {
-    new DBI(dataSource)
+  def buildStorageMSSQL(dataSource: DataSource, tablePrefix: String): Storage = {
+    new MSSQL(dataSource, tablePrefix)
+  }
+  
+  def buildStorageGeneric(url: String, username: String, password: String, tablePrefix: String): Storage = {
+    new DBI(LiteDataSource.driverManager(url, username, password), tablePrefix)
+  }
+  
+  def buildStorageGeneric(connection: Connection, tablePrefix: String): Storage = {
+    new DBI(LiteDataSource.singleConnection(connection), tablePrefix)
+  }
+  
+  def buildStorageGeneric(dataSource: DataSource, tablePrefix: String): Storage = {
+    new DBI(dataSource, tablePrefix)
   }
 }

@@ -34,20 +34,22 @@ import util.Logging
 import org.joda.time.Duration
 
 /**
- * Base Storage class used to access the databse.
+ * Base Storage class used to access the database.
  *
  * Usage:
- * new DBI(dataSource)
- * new DBI(connection)
- * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2"))
- * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "root", "root"))
+ * new DBI(dataSource, "gsb_")
+ * new DBI(connection, "gsb_")
+ * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2"), "gsb_")
+ * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "root", "root"), "gsb_")
  */
-class DBI(jt: JdbcTemplate) extends Storage with Logging {
-  def this(ds: () => Connection) = this(new JdbcTemplate(ds))
-  def this(ds: LiteDataSource) = this(new JdbcTemplate(ds))
-  def this(ds: DataSource) = this(new JdbcTemplate(ds))
+class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
+  def this(ds: () => Connection, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
+  def this(ds: LiteDataSource, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
+  def this(ds: DataSource, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
 
   import jt._
+  
+  val TABLE_PREFIX = tablePrefix
 
   init
 
@@ -56,188 +58,190 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
    */
   def init = {
     logger.error("Database init")
-    val tables = mutable.ListBuffer("updates", "a_chunks", "s_chunks", "full_hashes", "full_hashes_errors", "mac_keys")
+    val tables = mutable.ListBuffer("Updates", "AddChunks", "SubChunks", "FullHashes", "FullHashErrors", "MacKeys")
     metaData(meta => {
       val res = meta.getTables(null, null, "%", null)
       while (res.next()) {
         val table = res.getString("TABLE_NAME")
-        if (tables.contains(table)) {
+        val existing = tables.find(t => table.equalsIgnoreCase(TABLE_PREFIX+t))
+        if (existing.isDefined) {
           logger.debug("Table already exists: {}. Skipping table createion.", table)
-          tables -= table
+          tables -= existing.get
         }
       }
       res.close()
     })
 
     tables.foreach(_ match {
-      case "updates" => create_table_updates
-      case "a_chunks" => create_table_a_chunks
-      case "s_chunks" => create_table_s_chunks
-      case "full_hashes" => create_table_full_hashes
-      case "full_hashes_errors" => create_table_full_hashes_errors
-      case "mac_keys" => create_table_mac_keys
+      case "Updates" => createTableUpdates
+      case "AddChunks" => createTableAddChunks
+      case "SubChunks" => createTableSubChunks
+      case "FullHashes" => createTableFullHashes
+      case "FullHashErrors" => createTableFullHashErrors
+      case "MacKeys" => createTableMacKeys
       case x => logger.warn("Unknown table: {}", x)
     })
   }
 
-  def create_table_updates = {
-    logger.debug("Creating table: updates")
+  def createTableUpdates = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"Updates")
     val schema = """	
-		CREATE TABLE updates (
-      		last_success TIMESTAMP NOT NULL DEFAULT 0,
-			last_attempt TIMESTAMP NOT NULL,
-			next_attempt TIMESTAMP NOT NULL,
-			error_count INT NOT DEFAULT 0,
-			list VARCHAR( 50 ) NOT NULL
+		CREATE TABLE """+TABLE_PREFIX+"""Updates (
+      		dtLastSuccess TIMESTAMP,
+			dtLastAttempt TIMESTAMP NOT NULL,
+			dtNextAttempt TIMESTAMP NOT NULL,
+			iErrorCount INT NOT NULL,
+			sList VARCHAR( 50 ) NOT NULL
 		)
 	"""
 
     execute(schema)
   }
 
-  def create_table_a_chunks = {
-    logger.debug("Creating table: a_chunks")
+  def createTableAddChunks = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"AddChunks")
     val schema = """	
-		CREATE TABLE a_chunks (
-			hostkey VARCHAR( 8 ),
-			prefix VARCHAR( 64 ),
-			num INT NOT NULL,
-			list VARCHAR( 50 ) NOT NULL
+		CREATE TABLE """+TABLE_PREFIX+"""AddChunks (
+			sHostkey VARCHAR( 8 ),
+			sPrefix VARCHAR( 64 ),
+			iAddChunkNum INT NOT NULL,
+			sList VARCHAR( 50 ) NOT NULL
 		)
 	"""
 
     execute(schema)
 
     var index = """	
-		CREATE INDEX a_chunks_hostkey ON a_chunks (
-			hostkey
+		CREATE INDEX IDX_"""+TABLE_PREFIX+"""AddChunks_sHostkey ON """+TABLE_PREFIX+"""AddChunks (
+			sHostkey
 		)
 	"""
     execute(index)
 
     index = """
-		CREATE INDEX a_chunks_num_list ON a_chunks (
-			num,
-			list
+		CREATE INDEX IDX_"""+TABLE_PREFIX+"""AddChunks_iAddChunkNum_sList ON """+TABLE_PREFIX+"""AddChunks (
+			iAddChunkNum,
+			sList
 		)
 	"""
     execute(index)
-
+    
     index = """
-		CREATE UNIQUE INDEX a_chunks_unique ON a_chunks (
-			hostkey,
-			prefix,
-			num,
-			list
+		CREATE UNIQUE INDEX IDX_"""+TABLE_PREFIX+"""AddChunks_Unique ON """+TABLE_PREFIX+"""AddChunks (
+			sHostkey,
+			sPrefix,
+			iAddChunkNum,
+			sList
 		)
 	"""
     execute(index)
   }
 
-  def create_table_s_chunks = {
-    logger.debug("Creating table: s_chunks")
+  def createTableSubChunks = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"SubChunks")
     var schema = """
-		CREATE TABLE s_chunks (
-			hostkey VARCHAR( 8 ),
-			prefix VARCHAR( 64 ),
-			num INT NOT NULL,
-			add_num INT  Default '0',
-			list VARCHAR( 50 ) NOT NULL
+		CREATE TABLE """+TABLE_PREFIX+"""SubChunks (
+			sHostkey VARCHAR( 8 ),
+			sPrefix VARCHAR( 64 ),
+			iSubChunkNum INT NOT NULL,
+			iAddChunkNum INT NOT NULL,
+			sList VARCHAR( 50 ) NOT NULL
 		)
 	"""
 
     execute(schema)
 
     var index = """
-		CREATE INDEX s_chunks_hostkey ON s_chunks (
-			hostkey
+		CREATE INDEX IDX_"""+TABLE_PREFIX+"""SubChunks_sHostkey ON """+TABLE_PREFIX+"""SubChunks (
+			sHostkey
 		)
 	"""
     execute(index)
 
     index = """
-		CREATE INDEX s_chunks_num ON s_chunks (
-			num
+		CREATE INDEX IDX_"""+TABLE_PREFIX+"""SubChunks_iSubChunkNum ON """+TABLE_PREFIX+"""SubChunks (
+			iSubChunkNum
 		)
 	"""
     execute(index)
 
     index = """
-		CREATE INDEX s_chunks_num_list ON s_chunks (
-			num,
-			list
+		CREATE INDEX IDX_"""+TABLE_PREFIX+"""SubChunks_iSubChunkNum_sList ON """+TABLE_PREFIX+"""SubChunks (
+			iSubChunkNum,
+			sList
 		)
 	"""
     execute(index)
-
+    
     index = """
-		CREATE UNIQUE INDEX s_chunks_unique ON s_chunks (
-			hostkey,
-			prefix,
-			num,
-			add_num,
-			list
+		CREATE UNIQUE INDEX IDX_"""+TABLE_PREFIX+"""SubChunks_Unique ON """+TABLE_PREFIX+"""SubChunks (
+			sHostkey,
+			sPrefix,
+			iSubChunkNum,
+			iAddChunkNum,
+			sList
 		)
 	"""
     execute(index)
   }
 
-  def create_table_full_hashes = {
-    logger.debug("Creating table: full_hashes")
+   def createTableFullHashes = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"FullHashes")
     val schema = """
-		CREATE TABLE full_hashes (
-			id INT AUTO_INCREMENT PRIMARY KEY,
-			num INT,
-			hash VARCHAR( 64 ),
-			list VARCHAR( 50 ),
-			lastUpdate TIMESTAMP DEFAULT 0
+		CREATE TABLE """+TABLE_PREFIX+"""FullHashes (
+			pkiFullHashesID INT AUTO_INCREMENT PRIMARY KEY,
+			iAddChunkNum INT,
+			sHash VARCHAR( 64 ),
+			sList VARCHAR( 50 ),
+			dtLastUpdate TIMESTAMP NOT NULL
 		)
 	"""
 
     execute(schema)
-
+    
     val index = """
-		CREATE UNIQUE INDEX hash ON full_hashes (
-			num,
-			hash,
-			list
+		CREATE UNIQUE INDEX IDX"""+TABLE_PREFIX+"""FullHashes_Unique ON """+TABLE_PREFIX+"""FullHashes (
+			iAddChunkNum,
+			sHash,
+			sList
 		)
 	"""
     execute(index)
   }
 
-  def create_table_full_hashes_errors = {
-    logger.debug("Creating table: full_hashes_errors")
+  def createTableFullHashErrors = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"FullHashErrors")
     val schema = """
-		CREATE TABLE full_hashes_errors (
-			id INT AUTO_INCREMENT PRIMARY KEY,
-      		last_attempt TIMESTAMP NOT NULL,
-      		next_attempt TIMESTAMP NOT NULL,
-			error_count INT DEFAULT 0,
-			prefix VARCHAR( 64 )
-		)
-	"""
-    execute(schema)
-  }
-
-  def create_table_mac_keys = {
-    logger.debug("Creating table: mac_keys")
-    val schema = """
-		CREATE TABLE mac_keys (
-			client_key VARCHAR( 50 ) Default '',
-			wrapped_key VARCHAR( 150 ) Default ''
+		CREATE TABLE """+TABLE_PREFIX+"""FullHashErrors (
+			pkiFullHasheErrorsID INT AUTO_INCREMENT PRIMARY KEY,
+			dtLastAttempt TIMESTAMP NOT NULL,
+			dtNextAttempt TIMESTAMP NOT NULL,
+			iErrorCount INT NOT NULL,
+			sPrefix VARCHAR( 64 )
 		)
 	"""
 
     execute(schema)
   }
 
+  def createTableMacKeys = {
+    logger.debug("Creating table: "+TABLE_PREFIX+"MacKeys")
+    val schema = """
+		CREATE TABLE """+TABLE_PREFIX+"""MacKeys (
+			sClientKey VARCHAR( 50 ),
+			sWrappedKey VARCHAR( 150 )
+		)
+	"""
+
+    execute(schema)
+  }
+   
   override def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int, String)], list: String) = {
     logger.trace("Inserting subChunk: [chunknum={}, hostkey={}, chunks={}, list={}",
       Array[Object](chunknum: java.lang.Integer, hostkey, chunks, list))
 
-    val delQuery = "DELETE FROM s_chunks WHERE hostkey = ? AND prefix = ? AND num = ? AND add_num = ? AND list = ?"
-    val addQuery = "INSERT INTO s_chunks (hostkey, prefix, num, add_num, list) VALUES (?, ?, ?, ?, ?)"
+    val delQuery = "DELETE FROM "+TABLE_PREFIX+"SubChunks WHERE sHostkey = ? AND sPrefix = ? AND iSubChunkNum = ? AND iAddChunkNum = ? AND sList = ?"
+    val addQuery = "INSERT INTO "+TABLE_PREFIX+"SubChunks (sHostkey, sPrefix, iSubChunkNum, iAddChunkNum, sList) VALUES (?, ?, ?, ?, ?)"
 
     chunks foreach (tuple => {
       execute(delQuery, hostkey, tuple._2, chunknum, tuple._1, list)
@@ -254,8 +258,8 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     logger.trace("Inserting addChunk: [chunknum={}, hostkey={}, prefixes={}, list={}",
       Array[Object](chunknum: java.lang.Integer, hostkey, prefixes, list))
 
-    val delQuery = "DELETE FROM a_chunks WHERE hostkey = ? AND  prefix  = ? AND num = ? AND list  = ?"
-    val addQuery = "INSERT INTO a_chunks (hostkey, prefix, num, list) VALUES (?, ?, ?, ?)"
+    val delQuery = "DELETE FROM "+TABLE_PREFIX+"AddChunks WHERE sHostkey = ? AND  sPrefix  = ? AND iAddChunkNum = ? AND sList  = ?"
+    val addQuery = "INSERT INTO "+TABLE_PREFIX+"AddChunks (sHostkey, sPrefix, iAddChunkNum, sList) VALUES (?, ?, ?, ?)"
 
     prefixes foreach (prefix => {
       execute(delQuery, hostkey, prefix, chunknum, list)
@@ -268,149 +272,147 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     }
   }
 
-  override def getChunksForHostKey(hostkey: String): Seq[Chunk] = {
-    query("""SELECT * from a_chunks a LEFT OUTER JOIN s_chunks s 
-    		ON s.list = a.list
-    		AND s.hostkey = a.hostkey
-    		AND s.add_num = a.num
-    		AND s.prefix = a.prefix
-    		WHERE s.num IS NULL
-    		AND a.hostkey = ?""", hostkey).seq(row =>
-      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), -1))
+   override def getChunksForHostKey(hostkey: String): Seq[Chunk] = {
+    query("""SELECT a.sList, a.iAddChunkNum, a.sPrefix from """+TABLE_PREFIX+"""AddChunks a LEFT OUTER JOIN """+TABLE_PREFIX+"""SubChunks s 
+    		ON s.sList = a.sList
+    		AND s.sHostkey = a.sHostkey
+    		AND s.iAddChunkNum = a.iAddChunkNum
+    		AND s.sPrefix = a.sPrefix
+    		WHERE s.iSubChunkNum IS NULL
+    		AND a.sHostkey = ?""", hostkey).seq(row =>
+      Chunk(row.getInt("iAddChunkNum"), row.getString("sPrefix"), hostkey, row.getString("sList")))
   }
 
   override def getAddChunksNums(list: String): Seq[Int] = {
-    query("SELECT DISTINCT(num) FROM a_chunks WHERE list = ? ORDER BY num ASC", list).seq[Int].sorted
-  }
+	    query("SELECT DISTINCT(iAddChunkNum) FROM "+TABLE_PREFIX+"AddChunks WHERE sList = ? ORDER BY iAddChunkNum ASC", list).seq[Int].sorted
+	  }
 
   override def getSubChunksNums(list: String): Seq[Int] = {
-    query("SELECT DISTINCT(num) FROM s_chunks WHERE list = ? ORDER BY num ASC", list).seq[Int].sorted
+    query("SELECT DISTINCT(iSubChunkNum) FROM "+TABLE_PREFIX+"SubChunks WHERE sList = ? ORDER BY iSubChunkNum ASC", list).seq[Int].sorted
   }
 
   override def deleteAddChunks(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete add chunks: [chunknums={}, list={}]", chunknums, list)
-
+    
     val params = chunknums map (cn => Seq(cn, list))
-    executeBatch("DELETE FROM a_chunks WHERE num = ? AND list = ?", params)
+    executeBatch("DELETE FROM "+TABLE_PREFIX+"AddChunks WHERE iAddChunkNum = ? AND sList = ?", params)
   }
 
   override def deleteSubChunks(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete sub chunks: [chunknums={}, list={}]", chunknums, list)
-
-    val query = "DELETE FROM s_chunks WHERE num = ? AND list = ?"
-
-    chunknums foreach (num => {
-      execute(query, num, list)
-    })
+    
+    val params = chunknums map (cn => Seq(cn, list))
+    executeBatch("DELETE FROM "+TABLE_PREFIX+"SubChunks WHERE iSubChunkNum = ? AND sList = ?", params)
   }
 
   override def getFullHashes(chunknum: Int, lastUpdate: DateTime, list: String): Seq[String] = {
-    query("SELECT hash FROM full_hashes WHERE lastUpdate >= ? AND num = ? AND list = ?", chunknum, lastUpdate, list).seq[String]
+    query("SELECT sHash FROM "+TABLE_PREFIX+"FullHashes WHERE dtLastUpdate >= ? AND iAddChunkNum = ? AND sList = ?", lastUpdate, chunknum, list).seq[String]
   }
 
   override def updateSuccess(lastAttempt: DateTime, nextAttempt: DateTime, list: String) = {
     if (getLastUpdate(list).isEmpty) {
-      execute("INSERT INTO updates (last_attempt, last_success, next_attempt, error_count, list) VALUES (?, ?, 0, ?)", lastAttempt, lastAttempt, nextAttempt, list)
+      execute("INSERT INTO "+TABLE_PREFIX+"Updates (dtLastAttempt, dtLastSuccess, dtNextAttempt, iErrorCount, sList) VALUES (?, ?, ?, 0, ?)", lastAttempt, lastAttempt, nextAttempt, list)
     } else {
-      execute("UPDATE updates SET last_attempt = ?, last_success = ?, next_attempt = ? error_count = 0 WHERE list = ?", lastAttempt, lastAttempt, nextAttempt, list)
+      execute("UPDATE "+TABLE_PREFIX+"Updates SET dtLastAttempt = ?, dtLastSuccess = ?, dtNextAttempt = ?, iErrorCount = 0 WHERE sList = ?", lastAttempt, lastAttempt, nextAttempt, list)
     }
   }
 
   override def updateError(thisAttempt: DateTime, list: String) = {
     val status = getLastUpdate(list)
     if (status.isEmpty) {
-      execute("INSERT INTO updates (last_attempt, next_attempt, error_count, list) VALUES (?, ?, 1, ?)", thisAttempt, thisAttempt.plusMinutes(1), list)
+      execute("INSERT INTO "+TABLE_PREFIX+"Updates (dtLastAttempt, dtNextAttempt, iErrorCount, sList) VALUES (?, ?, 1, ?)", thisAttempt, thisAttempt.plusMinutes(1), list)
     } else {
       val (errors, nextAttempt) = updateBackoff(thisAttempt, status.get)
-      execute("UPDATE updates SET last_attempt = ?, next_attempt = ?, error_count = ? WHERE list = ?", thisAttempt, nextAttempt, errors, list)
+      execute("UPDATE "+TABLE_PREFIX+"Updates SET dtLastAttempt = ?, dtNextAttempt = ?, iErrorCount = ? WHERE sList = ?", thisAttempt, nextAttempt, errors, list)
     }
   }
 
   override def getLastUpdate(list: String): Option[Status] = {
-    query("SELECT * FROM updates WHERE list = ? LIMIT 1", list).option(row => {
-      val lastAttempt = row.getTimestamp("last_attempt")
-      val lastSuccess = row.getTimestamp("last_success")
-      val nextAttempt = row.getTimestamp("next_attempt")
-      val errors = row.getInt("error_count")
-      Status(new DateTime(lastAttempt), new DateTime(lastSuccess), new DateTime(nextAttempt), errors)
+    query("SELECT * FROM "+TABLE_PREFIX+"Updates WHERE sList = ? LIMIT 1", list).option(row => {
+      val lastAttempt = row.getTimestamp("dtLastAttempt")
+      val lastSuccess = Option(row.getTimestamp("dtLastSuccess")).map(new DateTime(_))
+      val nextAttempt = row.getTimestamp("dtNextAttempt")
+      val errors = row.getInt("iErrorCount")
+      Status(new DateTime(lastAttempt), lastSuccess, new DateTime(nextAttempt), errors)
     })
   }
-
+  
   override def addFullHashes(lastUpdate: DateTime, full_hashes: Seq[Hash]) = {
     logger.trace("Add full hashes: {}", full_hashes)
 
     val deleteParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list))
     val insertParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, lastUpdate))
-    executeBatch("DELETE FROM full_hashes WHERE num = ? AND hash = ? AND list = ?", deleteParams)
-    executeBatch("INSERT INTO full_hashes (num, hash, list, lastUpdate) VALUES (?, ?, ?, ?)", insertParams)
+    executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE iAddChunkNum = ? AND sHash = ? AND sList = ?", deleteParams)
+    executeBatch("INSERT INTO "+TABLE_PREFIX+"FullHashes (iAddChunkNum, sHash, sList, dtLastUpdate) VALUES (?, ?, ?, ?)", insertParams)
   }
-
+  
   override def deleteFullHashes(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete full hashes: [chunknums={}, list={}]", chunknums, list)
-
+    
     val params = chunknums map (cn => Seq(cn, list))
-    executeBatch("DELETE FROM full_hashes WHERE num = ? AND list = ?", params)
+    executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE iAddChunkNum = ? AND sList = ?", params)
   }
-
+  
   override def fullHashError(thisAttempt: DateTime, prefix: String) = {
     val lastError = getFullHashError(prefix)
     if (lastError.isEmpty){
-    	execute("INSERT INTO full_hashes_errors (prefix, error_count, last_attempt, next_attempt) VALUES (?, 1, ?, ?)", prefix, thisAttempt, thisAttempt.plusMinutes(1))
+    	execute("INSERT INTO "+TABLE_PREFIX+"FullHashErrors (sPrefix, iErrorCount, dtLastAttempt, dtNextAttempt) VALUES (?, 1, ?, ?)", prefix, thisAttempt, thisAttempt.plusMinutes(1))
     } else {
       val (errors, nextAttempt) = fullHashBackoff(thisAttempt, lastError.get)
-      execute("UPDATE full_hashes_errors SET error_count = ?, last_attempt = ?, next_attempt = ? WHERE prefix = ?", errors, thisAttempt, nextAttempt, prefix)
+      execute("UPDATE "+TABLE_PREFIX+"FullHashErrors SET iErrorCount = ?, dtLastAttempt = ?, dtNextAttempt = ? WHERE sPrefix = ?", errors, thisAttempt, nextAttempt, prefix)
     }
   }
 
   override def clearFullhashErrors(chunks: Seq[Chunk]) = {
     val params = chunks.map(c => Seq(c.prefix))
-    executeBatch("DELETE FROM full_hashes_errors WHERE prefix = ?", params)
+    executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashErrors WHERE sPrefix = ?", params)
   }
 
   override def getFullHashError(prefix: String): Option[Status] = {
-    query("SELECT * FROM full_hashes_errors WHERE prefix = ?", prefix).option(row => {
-      val lastAttempt = row.getTimestamp("last_attempt")
-      val nextAttempt = row.getTimestamp("next_attempt")
-      val errors = row.getInt("error_count")
-      new Status(new DateTime(lastAttempt), null, new DateTime(nextAttempt), errors)
+    query("SELECT dtLastAttempt, dtNextAttempt, iErrorCount FROM "+TABLE_PREFIX+"FullHashErrors WHERE sPrefix = ?", prefix).option(row => {
+      val lastAttempt = row.getTimestamp("dtLastAttempt")
+      val nextAttempt = row.getTimestamp("dtNextAttempt")
+      val errors = row.getInt("iErrorCount")
+      new Status(new DateTime(lastAttempt), None, new DateTime(nextAttempt), errors)
     })
   }
-
+	  
   override def getMacKey(): Option[MacKey] = {
-    query("SELECT client_key, wrapped_key FROM mac_keys LIMIT 1").option(row =>
-      MacKey(row.getString("client_key"), row.getString("wrapped_key")))
+    query("SELECT sClientKey, sWrappedKey FROM "+TABLE_PREFIX+"MacKeys LIMIT 1").option(row =>
+      MacKey(row.getString("sClientKey"), row.getString("sWrappedKey"))
+    )
   }
 
   override def addMacKey(key: MacKey) = {
-    delete_mac_keys();
+    deleteMacKeys();
 
     logger.trace("Adding mac key: {}", key)
 
-    execute("INSERT INTO mac_keys (client_key, wrapped_key) VALUES (?, ?)", key.clientKey, key.wrappedKey)
+    execute("INSERT INTO "+TABLE_PREFIX+"MacKeys (sClientKey, sWrappedKey) VALUES (?, ?)", key.clientKey, key.wrappedKey)
   }
 
-  override def delete_mac_keys() = {
+  override def deleteMacKeys() = {
     logger.trace("Deleting mac keys")
 
-    execute("DELETE FROM mac_keys WHERE 1")
+    execute("DELETE FROM "+TABLE_PREFIX+"MacKeys")
   }
 
   override def reset(list: String) = {
     logger.warn("Reseting database for list: {}", list)
+    
+    execute("DELETE FROM "+TABLE_PREFIX+"SubChunks WHERE sList = ?", list);
 
-    execute("DELETE FROM s_chunks WHERE list = ?", list);
+    execute("DELETE FROM "+TABLE_PREFIX+"AddChunks WHERE sList = ?", list);
 
-    execute("DELETE FROM a_chunks WHERE list = ?", list);
+    execute("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE sList = ?", list);
 
-    execute("DELETE FROM full_hashes WHERE list = ?", list);
+    execute("DELETE FROM "+TABLE_PREFIX+"FullHashErrors");
 
-    execute("DELETE FROM full_hashes_errors", list);
-
-    execute("DELETE FROM updates WHERE list = ?", list);
+    execute("DELETE FROM "+TABLE_PREFIX+"Updates WHERE sList = ?", list);
   }
 
-  def clearExpiredHashes = {
-    execute("DELETE FROM full_hashes WHERE lastUpdate < ?", new DateTime().minusMinutes(45))
+  override def clearExpiredHashes = {
+    execute("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE dtLastupdate < ?", new DateTime().minusMinutes(45))
   }
   
   /**
@@ -420,11 +422,11 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
   def updateBackoff(thisAttempt: DateTime, lastUpdate: Status): (Int, DateTime) = {
      // lastUpdate.errors will always be >= 1 here
     val errors = lastUpdate.errors + 1
-    val lastWaitSeconds = new Duration(lastUpdate.lastAttempt, lastUpdate.nextAttempt).toPeriod().getSeconds()
+    val lastWaitSeconds = new Duration(lastUpdate.lastAttempt, lastUpdate.nextAttempt).getStandardSeconds()
     val wait = errors match {
       case e if e < 2 => Period.minutes(1) // should never match but just to be safe
       case 2 => Period.minutes(30 + (math.random * 1).toInt)
-      case e if e > 2 && e <= 5 => Period.seconds(lastWaitSeconds * 2)
+      case e if e > 2 && e <= 5 => Period.seconds((lastWaitSeconds * 2).toInt)
       case e if e > 5 => Period.minutes(480)
     }
     val nextAttempt = thisAttempt.plus(wait)
@@ -432,13 +434,13 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
   }
   
   /**
-   * Calculate error count and nextAttempt using full hash back off logic
+   * Calculate error count and nextAttempt using full hash requests
    * @see https://developers.google.com/safe-browsing/developers_guide_v2#RequestFrequencyHashes
    */
   def fullHashBackoff(thisAttempt: DateTime, lastError: Status): (Int, DateTime) = {
     // lastError.errors will always be >= 1 here
     var errors = lastError.errors+1
-    val secondsSinceLast = new Duration(lastError.lastAttempt, thisAttempt).toPeriod().getSeconds()
+    val secondsSinceLast = new Duration(lastError.lastAttempt, thisAttempt).getStandardSeconds()
     val wait = errors match {
       // this is second error but last error was more than 5 minutes ago: no back off
       case e if e <= 2 && secondsSinceLast > 5*60 => errors = 1; Period.ZERO 

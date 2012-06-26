@@ -32,22 +32,22 @@ import org.joda.time.DateTime
 import net.google.safebrowsing2.Expression
 
 /**
- * Base Storage class used to access the databse.
+ * MySQL Storage class used to access the database.
  * 
  * @see DBI
  */
-class MySQL(jt: JdbcTemplate) extends DBI(jt) {
-    def this(ds: () => Connection) = this(new JdbcTemplate(ds))
-    def this(ds: LiteDataSource) = this(new JdbcTemplate(ds))
-    def this(ds: DataSource) = this(new JdbcTemplate(ds))
+class MySQL(jt: JdbcTemplate, tablePrefix: String) extends DBI(jt, tablePrefix) {
+  def this(ds: () => Connection, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
+  def this(ds: LiteDataSource, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
+  def this(ds: DataSource, tablePrefix: String) = this(new JdbcTemplate(ds), tablePrefix)
 
   import jt._
-    
+  
   override def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int,String)], list: String) = {
     logger.trace("Inserting subChunk: [chunknum={}, hostkey={}, chunks={}, list={}",
         Array[Object](chunknum: java.lang.Integer, hostkey, chunks, list))
      
-    val addQuery = "INSERT IGNORE INTO s_chunks (hostkey, prefix, num, add_num, list) VALUES (?, ?, ?, ?, ?)"
+    val addQuery = "INSERT IGNORE INTO "+TABLE_PREFIX+"SubChunks (sHostkey, sPrefix, iSubChunkNum, iAddChunkNum, sList) VALUES (?, ?, ?, ?, ?)"
 
     chunks foreach (tuple => {
       execute(addQuery, hostkey, tuple._2, chunknum, tuple._1, list)
@@ -62,7 +62,7 @@ class MySQL(jt: JdbcTemplate) extends DBI(jt) {
     logger.trace("Inserting addChunk: [chunknum={}, hostkey={}, prefixes={}, list={}",
         Array[Object](chunknum: java.lang.Integer, hostkey, prefixes, list))
         
-    val addQuery = "INSERT IGNORE INTO a_chunks (hostkey, prefix, num, list) VALUES (?, ?, ?, ?)"
+    val addQuery = "INSERT IGNORE INTO "+TABLE_PREFIX+"AddChunks (sHostkey, sPrefix, iAddChunkNum, sList) VALUES (?, ?, ?, ?)"
 
     prefixes foreach (prefix => {
       execute(addQuery, hostkey, prefix, chunknum, list)
