@@ -5,14 +5,19 @@ This project implements the [Google Safebrowsing API v2](https://developers.goog
 ## Usage in Scala
 ### Safe Browsing API
 	val apikey = "123456"
-	val storage = new MySQL(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "pass"), "gsb2_")
+	val dburl = "jdbc:mysql://localhost:3306/googlesafebrowsing2"
+	val tablePrefix = "gsb2_"
+	val storage = new MySQL(LiteDataSource.driverManager(dburl, "user", "pass"), tablePrefix)
 	val sb2 = new SafeBrowsing2(apikey, storage)
 	
 	// update database
-	val secondsToWaitBeforeNextUpdate = sb2.update("", false, false)
+	val forceUpdate = false
+	val useMac = false
+	val secondsToWaitBeforeNextUpdate = sb2.update("", forceUpdate, useMac)
 	
 	// lookup url in database
-	val listMatch = sb2.lookup("http://ianfette.org", "", false)
+	val list = "" // lookup in all lists
+	val listMatch = sb2.lookup("http://ianfette.org", list, useMac)
 	listMatch match {
 	  case Some(list) => println("Match found in list: " + list)
 	  case None => println("No match found")
@@ -32,14 +37,19 @@ Outputs:
 ## Usage in Java
 ### Safe Browsing API
 	String apikey = "123456";
-	Storage storage = JavaHelper.buildStorageMySQL("jdbc:mysql://localhost:3306/googlesafebrowsing2", "user", "password", "gsb2_");
+	String url = "jdbc:mysql://localhost:3306/googlesafebrowsing2";
+	String tablePrefix = "gsb2_";
+	Storage storage = JavaHelper.buildStorageMySQL(url, "user", "password", tablePrefix);
 	SafeBrowsing2 sb2 = new SafeBrowsing2(apikey, storage);
 	
 	// update the database
-	int secondsToWaitBeforeNextUpdate = sb2.update("", false, false);
+	boolean forceUpdate = false;
+	boolean useMac = false;
+	int secondsToWaitBeforeNextUpdate = sb2.update("", forceUpdate, useMac);
 	
 	// lookup url in database
-	String match = sb2.jlookup("http://ianfette.org","",false);
+	String list = ""; // lookup in all lists
+	String match = sb2.jlookup("http://ianfette.org", list, useMac);
 	if (match != null)
 		System.out.println("Match found in list: " + list);
 	
