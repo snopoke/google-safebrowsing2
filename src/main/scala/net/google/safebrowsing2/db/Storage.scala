@@ -21,8 +21,9 @@ import net.google.safebrowsing2.MacKey
 import net.google.safebrowsing2.Hash
 import net.google.safebrowsing2.Chunk
 import net.google.safebrowsing2.Status
-import org.joda.time.ReadableInstant
+import org.joda.time.DateTime
 import net.google.safebrowsing2.Expression
+import org.joda.time.DateTime
 
 trait Storage {
 
@@ -40,19 +41,19 @@ trait Storage {
 
   def deleteSubChunks(chunknums: Seq[Int], list: String)
 
-  def getFullHashes(chunknum: Int, timestamp: ReadableInstant, list: String): Seq[String]
+  def getFullHashes(chunknum: Int, timestamp: DateTime, list: String): Seq[String]
 
-  def updated(timestamp: ReadableInstant, wait: Int, list: String)
+  def updateSuccess(lastAttempt: DateTime, nextAttempt: DateTime, list: String)
 
-  def updateError(timestamp: ReadableInstant, list: String, wait: Int = 60, errors: Int = 1)
+  def updateError(lastAttempt: DateTime, list: String)
 
-  def lastUpdate(list: String): Option[Status]
+  def getLastUpdate(list: String): Option[Status]
 
-  def addFullHashes(timestamp: ReadableInstant, full_hashes: Seq[Hash])
+  def addFullHashes(timestamp: DateTime, full_hashes: Seq[Hash])
 
   def deleteFullHashes(chunknums: Seq[Int], list: String)
 
-  def fullHashError(timestamp: ReadableInstant, prefix: String)
+  def fullHashError(timestamp: DateTime, prefix: String)
 
   def clearFullhashErrors(expressions: Seq[Chunk])
 

@@ -27,14 +27,15 @@ import net.google.safebrowsing2.Hash
 import net.google.safebrowsing2.Chunk
 import net.google.safebrowsing2.Status
 import org.joda.time.Period
-import org.joda.time.ReadableInstant
+import org.joda.time.DateTime
 import org.joda.time.DateTime
 import net.google.safebrowsing2.Expression
 import util.Logging
+import org.joda.time.Duration
 
 /**
  * Base Storage class used to access the databse.
- * 
+ *
  * Usage:
  * new DBI(dataSource)
  * new DBI(connection)
@@ -42,12 +43,12 @@ import util.Logging
  * new DBI(LiteDataSource.driverManager("jdbc:mysql://localhost:3306/googlesafebrowsing2", "root", "root"))
  */
 class DBI(jt: JdbcTemplate) extends Storage with Logging {
-    def this(ds: () => Connection) = this(new JdbcTemplate(ds))
-    def this(ds: LiteDataSource) = this(new JdbcTemplate(ds))
-    def this(ds: DataSource) = this(new JdbcTemplate(ds))
+  def this(ds: () => Connection) = this(new JdbcTemplate(ds))
+  def this(ds: LiteDataSource) = this(new JdbcTemplate(ds))
+  def this(ds: DataSource) = this(new JdbcTemplate(ds))
 
   import jt._
-    
+
   init
 
   /**
@@ -58,16 +59,16 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     val tables = mutable.ListBuffer("updates", "a_chunks", "s_chunks", "full_hashes", "full_hashes_errors", "mac_keys")
     metaData(meta => {
       val res = meta.getTables(null, null, "%", null)
-      while (res.next()){
+      while (res.next()) {
         val table = res.getString("TABLE_NAME")
-        if (tables.contains(table)){
-        	logger.debug("Table already exists: {}. Skipping table createion.", table)
-        	tables -= table
-      	}
+        if (tables.contains(table)) {
+          logger.debug("Table already exists: {}. Skipping table createion.", table)
+          tables -= table
+        }
       }
       res.close()
     })
-    
+
     tables.foreach(_ match {
       case "updates" => create_table_updates
       case "a_chunks" => create_table_a_chunks
@@ -83,9 +84,10 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     logger.debug("Creating table: updates")
     val schema = """	
 		CREATE TABLE updates (
-			last TIMESTAMP NOT NULL DEFAULT 0,
-			wait INT NOT NULL DEFAULT '0',
-			errors INT NOT NULL DEFAULT '1800',
+      		last_success TIMESTAMP NOT NULL DEFAULT 0,
+			last_attempt TIMESTAMP NOT NULL,
+			next_attempt TIMESTAMP NOT NULL,
+			error_count INT NOT DEFAULT 0,
 			list VARCHAR( 50 ) NOT NULL
 		)
 	"""
@@ -188,7 +190,7 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
 			num INT,
 			hash VARCHAR( 64 ),
 			list VARCHAR( 50 ),
-			timestamp TIMESTAMP Default 0
+			lastUpdate TIMESTAMP DEFAULT 0
 		)
 	"""
 
@@ -209,12 +211,12 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     val schema = """
 		CREATE TABLE full_hashes_errors (
 			id INT AUTO_INCREMENT PRIMARY KEY,
-			errors INT Default '0',
-			prefix VARCHAR( 64 ),
-			timestamp TIMESTAMP Default 0
+      		last_attempt TIMESTAMP NOT NULL,
+      		next_attempt TIMESTAMP NOT NULL,
+			error_count INT DEFAULT 0,
+			prefix VARCHAR( 64 )
 		)
 	"""
-
     execute(schema)
   }
 
@@ -230,10 +232,10 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     execute(schema)
   }
 
-  override def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int,String)], list: String) = {
+  override def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int, String)], list: String) = {
     logger.trace("Inserting subChunk: [chunknum={}, hostkey={}, chunks={}, list={}",
-        Array[Object](chunknum: java.lang.Integer, hostkey, chunks, list))
-     
+      Array[Object](chunknum: java.lang.Integer, hostkey, chunks, list))
+
     val delQuery = "DELETE FROM s_chunks WHERE hostkey = ? AND prefix = ? AND num = ? AND add_num = ? AND list = ?"
     val addQuery = "INSERT INTO s_chunks (hostkey, prefix, num, add_num, list) VALUES (?, ?, ?, ?, ?)"
 
@@ -250,8 +252,8 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
 
   override def addChunks_a(chunknum: Int, hostkey: String, prefixes: Seq[String], list: String) = {
     logger.trace("Inserting addChunk: [chunknum={}, hostkey={}, prefixes={}, list={}",
-        Array[Object](chunknum: java.lang.Integer, hostkey, prefixes, list))
-        
+      Array[Object](chunknum: java.lang.Integer, hostkey, prefixes, list))
+
     val delQuery = "DELETE FROM a_chunks WHERE hostkey = ? AND  prefix  = ? AND num = ? AND list  = ?"
     val addQuery = "INSERT INTO a_chunks (hostkey, prefix, num, list) VALUES (?, ?, ?, ?)"
 
@@ -265,7 +267,7 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
       execute(addQuery, "", "", chunknum, list)
     }
   }
-  
+
   override def getChunksForHostKey(hostkey: String): Seq[Chunk] = {
     query("""SELECT * from a_chunks a LEFT OUTER JOIN s_chunks s 
     		ON s.list = a.list
@@ -274,8 +276,7 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     		AND s.prefix = a.prefix
     		WHERE s.num IS NULL
     		AND a.hostkey = ?""", hostkey).seq(row =>
-      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), -1)
-    )
+      Chunk(row.getInt("num"), row.getString("prefix"), hostkey, row.getString("list"), -1))
   }
 
   override def getAddChunksNums(list: String): Seq[Int] = {
@@ -288,14 +289,14 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
 
   override def deleteAddChunks(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete add chunks: [chunknums={}, list={}]", chunknums, list)
-    
+
     val params = chunknums map (cn => Seq(cn, list))
     executeBatch("DELETE FROM a_chunks WHERE num = ? AND list = ?", params)
   }
 
   override def deleteSubChunks(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete sub chunks: [chunknums={}, list={}]", chunknums, list)
-    
+
     val query = "DELETE FROM s_chunks WHERE num = ? AND list = ?"
 
     chunknums foreach (num => {
@@ -303,60 +304,61 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
     })
   }
 
-  override def getFullHashes(chunknum: Int, timestamp: ReadableInstant, list: String): Seq[String] = {
-    query("SELECT hash FROM full_hashes WHERE timestamp >= ? AND num = ? AND list = ?", chunknum, timestamp, list).seq[String]
+  override def getFullHashes(chunknum: Int, lastUpdate: DateTime, list: String): Seq[String] = {
+    query("SELECT hash FROM full_hashes WHERE lastUpdate >= ? AND num = ? AND list = ?", chunknum, lastUpdate, list).seq[String]
   }
 
-  override def updated(time: ReadableInstant, wait: Int, list: String) = {
-    if (lastUpdate(list).isEmpty) {
-      execute("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, 0, ?)", time, wait, list)
+  override def updateSuccess(lastAttempt: DateTime, nextAttempt: DateTime, list: String) = {
+    if (getLastUpdate(list).isEmpty) {
+      execute("INSERT INTO updates (last_attempt, last_success, next_attempt, error_count, list) VALUES (?, ?, 0, ?)", lastAttempt, lastAttempt, nextAttempt, list)
     } else {
-      execute("UPDATE updates SET last = ?, wait = ?, errors = 0 WHERE list = ?", time, wait, list)
+      execute("UPDATE updates SET last_attempt = ?, last_success = ?, next_attempt = ? error_count = 0 WHERE list = ?", lastAttempt, lastAttempt, nextAttempt, list)
     }
   }
 
-  override def updateError(time: ReadableInstant, list: String, wait: Int = 60, errors: Int = 1) = {
-    val status = lastUpdate(list)
+  override def updateError(thisAttempt: DateTime, list: String) = {
+    val status = getLastUpdate(list)
     if (status.isEmpty) {
-      execute("INSERT INTO updates (last, wait, errors, list) VALUES (?, ?, ?, ?)", time, wait, errors, list)
+      execute("INSERT INTO updates (last_attempt, next_attempt, error_count, list) VALUES (?, ?, 1, ?)", thisAttempt, thisAttempt.plusMinutes(1), list)
     } else {
-      execute("UPDATE updates SET last = ?, wait = ?, errors = ? WHERE list = ?", time, wait, status.get.errors + errors, list)
+      val (errors, nextAttempt) = updateBackoff(thisAttempt, status.get)
+      execute("UPDATE updates SET last_attempt = ?, next_attempt = ?, error_count = ? WHERE list = ?", thisAttempt, nextAttempt, errors, list)
     }
   }
 
-  override def lastUpdate(list: String): Option[Status] = {
-    query("SELECT last, wait, errors FROM updates WHERE list = ? LIMIT 1", list).option(row => {
-      val time = Option(row.getTimestamp("last")).getOrElse(new Date(0))
-      val wait = Option(row.getInt("wait")).getOrElse(30*60) // 30 minutes default
-      val errors = Option(row.getInt("errors")).getOrElse(0)
-      Status(new DateTime(time), Period.seconds(wait), errors)
+  override def getLastUpdate(list: String): Option[Status] = {
+    query("SELECT * FROM updates WHERE list = ? LIMIT 1", list).option(row => {
+      val lastAttempt = row.getTimestamp("last_attempt")
+      val lastSuccess = row.getTimestamp("last_success")
+      val nextAttempt = row.getTimestamp("next_attempt")
+      val errors = row.getInt("error_count")
+      Status(new DateTime(lastAttempt), new DateTime(lastSuccess), new DateTime(nextAttempt), errors)
     })
   }
 
-  override def addFullHashes(timestamp: ReadableInstant, full_hashes: Seq[Hash]) = {
+  override def addFullHashes(lastUpdate: DateTime, full_hashes: Seq[Hash]) = {
     logger.trace("Add full hashes: {}", full_hashes)
-    
+
     val deleteParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list))
-    val insertParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, timestamp))
+    val insertParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, lastUpdate))
     executeBatch("DELETE FROM full_hashes WHERE num = ? AND hash = ? AND list = ?", deleteParams)
-    executeBatch("INSERT INTO full_hashes (num, hash, list, timestamp) VALUES (?, ?, ?, ?)", insertParams)
+    executeBatch("INSERT INTO full_hashes (num, hash, list, lastUpdate) VALUES (?, ?, ?, ?)", insertParams)
   }
 
   override def deleteFullHashes(chunknums: Seq[Int], list: String) = {
     logger.trace("Delete full hashes: [chunknums={}, list={}]", chunknums, list)
-    
+
     val params = chunknums map (cn => Seq(cn, list))
     executeBatch("DELETE FROM full_hashes WHERE num = ? AND list = ?", params)
   }
 
-  override def fullHashError(timestamp: ReadableInstant, prefix: String) = {
-    val existing = query("SELECT id, errors FROM full_hashes_errors WHERE prefix = ? LIMIT 1", prefix).option(row =>
-      (row.getInt("errors"), row.getInt("id"))
-    )
-
-    existing match {
-      case None => execute("INSERT INTO full_hashes_errors (prefix, errors, timestamp) VALUES (?, 1, ?)", prefix, timestamp)
-      case Some((errors, id)) => execute("UPDATE full_hashes_errors SET errors = ?, timestamp = ? WHERE id = ?", errors + 1, timestamp, id)
+  override def fullHashError(thisAttempt: DateTime, prefix: String) = {
+    val lastError = getFullHashError(prefix)
+    if (lastError.isEmpty){
+    	execute("INSERT INTO full_hashes_errors (prefix, error_count, last_attempt, next_attempt) VALUES (?, 1, ?, ?)", prefix, thisAttempt, thisAttempt.plusMinutes(1))
+    } else {
+      val (errors, nextAttempt) = fullHashBackoff(thisAttempt, lastError.get)
+      execute("UPDATE full_hashes_errors SET error_count = ?, last_attempt = ?, next_attempt = ? WHERE prefix = ?", errors, thisAttempt, nextAttempt, prefix)
     }
   }
 
@@ -366,15 +368,17 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
   }
 
   override def getFullHashError(prefix: String): Option[Status] = {
-    query("SELECT timestamp, errors FROM full_hashes_errors WHERE prefix = ? LIMIT 1", prefix).option(row =>
-      new Status(new DateTime(row.getTimestamp("timestamp")), Period.ZERO, row.getInt("errors"))
-    )
+    query("SELECT * FROM full_hashes_errors WHERE prefix = ?", prefix).option(row => {
+      val lastAttempt = row.getTimestamp("last_attempt")
+      val nextAttempt = row.getTimestamp("next_attempt")
+      val errors = row.getInt("error_count")
+      new Status(new DateTime(lastAttempt), null, new DateTime(nextAttempt), errors)
+    })
   }
 
   override def getMacKey(): Option[MacKey] = {
     query("SELECT client_key, wrapped_key FROM mac_keys LIMIT 1").option(row =>
-      MacKey(row.getString("client_key"), row.getString("wrapped_key"))
-    )
+      MacKey(row.getString("client_key"), row.getString("wrapped_key")))
   }
 
   override def addMacKey(key: MacKey) = {
@@ -387,13 +391,13 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
 
   override def delete_mac_keys() = {
     logger.trace("Deleting mac keys")
-    
+
     execute("DELETE FROM mac_keys WHERE 1")
   }
 
   override def reset(list: String) = {
     logger.warn("Reseting database for list: {}", list)
-    
+
     execute("DELETE FROM s_chunks WHERE list = ?", list);
 
     execute("DELETE FROM a_chunks WHERE list = ?", list);
@@ -404,8 +408,45 @@ class DBI(jt: JdbcTemplate) extends Storage with Logging {
 
     execute("DELETE FROM updates WHERE list = ?", list);
   }
-  
+
   def clearExpiredHashes = {
-    execute("DELETE FROM full_hashes WHERE timestamp < ?", new DateTime().minusMinutes(45))
+    execute("DELETE FROM full_hashes WHERE lastUpdate < ?", new DateTime().minusMinutes(45))
+  }
+  
+  /**
+   * Calculate error count and nextAttempt for updates
+   * @see https://developers.google.com/safe-browsing/developers_guide_v2#RequestFrequencyData
+   */
+  def updateBackoff(thisAttempt: DateTime, lastUpdate: Status): (Int, DateTime) = {
+     // lastUpdate.errors will always be >= 1 here
+    val errors = lastUpdate.errors + 1
+    val lastWaitSeconds = new Duration(lastUpdate.lastAttempt, lastUpdate.nextAttempt).toPeriod().getSeconds()
+    val wait = errors match {
+      case e if e < 2 => Period.minutes(1) // should never match but just to be safe
+      case 2 => Period.minutes(30 + (math.random * 1).toInt)
+      case e if e > 2 && e <= 5 => Period.seconds(lastWaitSeconds * 2)
+      case e if e > 5 => Period.minutes(480)
+    }
+    val nextAttempt = thisAttempt.plus(wait)
+    (errors, nextAttempt)
+  }
+  
+  /**
+   * Calculate error count and nextAttempt using full hash back off logic
+   * @see https://developers.google.com/safe-browsing/developers_guide_v2#RequestFrequencyHashes
+   */
+  def fullHashBackoff(thisAttempt: DateTime, lastError: Status): (Int, DateTime) = {
+    // lastError.errors will always be >= 1 here
+    var errors = lastError.errors+1
+    val secondsSinceLast = new Duration(lastError.lastAttempt, thisAttempt).toPeriod().getSeconds()
+    val wait = errors match {
+      // this is second error but last error was more than 5 minutes ago: no back off
+      case e if e <= 2 && secondsSinceLast > 5*60 => errors = 1; Period.ZERO 
+      case 2 => Period.minutes(30) // 2 errors within last 5 minutes: enter back off mode 
+      case 3 => Period.hours(1)
+      case e => Period.hours(2)
+    }
+    val nextAttempt = thisAttempt.plus(wait)
+    (errors, nextAttempt)
   }
 }

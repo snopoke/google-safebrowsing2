@@ -15,6 +15,7 @@
  */
 
 package net.google.safebrowsing2
+
 import java.net.URI
 import java.net.URL
 import java.util.Date
@@ -68,19 +69,19 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
-      val info = storage.lastUpdate(listName)
-      val tooEarly = !force && info.map(_.waitUntil.isAfter(now)).getOrElse(false)
+      val info = storage.getLastUpdate(listName)
+      val tooEarly = !force && info.map(_.nextAttempt.isAfter(now)).getOrElse(false)
       if (tooEarly) {
 
         if (info.isDefined) {
-          val secs = new Duration(now, info.get.waitUntil).getStandardSeconds()
+          val secs = new Duration(now, info.get.nextAttempt).getStandardSeconds()
           if (secs < minUpdateWait)
             minUpdateWait = secs.toInt
         }
 
-        logger.debug("Too early to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
+        logger.debug("Too early to update {}: {} / {}", Array[Object](listName, now, info.map(_.nextAttempt)))
       } else {
-        logger.debug("OK to update {}: {} / {}", Array[Object](listName, now, info.map(_.waitUntil)))
+        logger.debug("OK to update {}: {} / {}", Array[Object](listName, now, info.map(_.nextAttempt)))
       }
       !tooEarly
     })
@@ -126,7 +127,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         throw new ParsingException("Error parsing response from server")
       }
     }
-    
+
     logger.debug("Parsing RFD data successful")
     val resp = parseResult.get
     if (resp.rekey) {
@@ -183,21 +184,21 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     toUpdate foreach (list => {
       logger.debug("List update: [list={}] [wait={}]", list, resp.next)
-      storage.updated(now, resp.next, list)
+      storage.updateSuccess(now, now.plusSeconds(resp.next), list)
       if (resp.next < minUpdateWait)
         minUpdateWait = resp.next
     })
 
     minUpdateWait
   }
-  
+
   /**
    * Lookup a URL against the Google Safe Browsing database.
    *
    * @param url
    * @param listName Optional. Lookup against a specific list.
    * @returns Returns List name if there is a match or null
-   * 
+   *
    * Java compatibility method
    */
   def jlookup(url: String, listName: String, withMac: Boolean): String = {
@@ -211,6 +212,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    * @param listName Optional. Lookup against a specific list.
    * @returns Returns Option(list name) if there is a match or None.
    */
+  @throws(classOf[ApiException])
   def lookup(url: String, listName: String, withMac: Boolean): Option[String] = {
     val candidates: Array[String] = if (!listName.isEmpty()) {
       Array(listName)
@@ -224,6 +226,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     lookup_hostKey(candidates, expressions, hostKey, withMac)
   }
 
+  @throws(classOf[ApiException])
   def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
 
     // Local lookup
@@ -270,14 +273,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    *  Request full full hashes for specific prefixes from Google.
    */
+  @throws(classOf[ApiException])
   def requestFullHashes(chunks: Seq[Chunk], withMac: Boolean): Seq[Hash] = {
-
-    /**
-     * Return true if the wait time has passed or false otherwise
-     */
-    def delay(status: Status, wait: Period): Boolean = {
-      status.updateTime.plus(wait).isBeforeNow()
-    }
 
     var macKey: Option[MacKey] = None
     if (withMac) {
@@ -285,21 +282,27 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       if (macKey.isEmpty) throw new MacException("Unable to get MacKey")
     }
 
-    // TODO: better back off
+    val errorsToClear = mutable.ArrayBuffer[Chunk]()
     val toFetch = chunks filter (c => {
-      val errors = storage.getFullHashError(c.prefix)
-      val fetch = errors match {
+      val status = storage.getFullHashError(c.prefix)
+      val fetch = status match {
         case None => true
-        case Some(status) if (status.errors <= 2) => true
-        case Some(status) if (status.errors == 3) => delay(status, Period.minutes(30))
-        case Some(status) if (status.errors == 4) => delay(status, Period.hours(1))
-        case Some(status) => delay(status, Period.hours(2))
+        case Some(status) => {
+          // if last error was more than 8 hours ago exit back off mode
+          if (status.lastAttempt.isBefore(new DateTime().minusHours(8)))
+            errorsToClear += c
+          status.nextAttempt.isBeforeNow()
+        }
       }
       if (!fetch) {
-        logger.debug("Delaying fetch of full hash for chunk: {} / {}", c, errors)
+        logger.debug("Delaying fetch of full hash for chunk: {} / {}", c, status)
       }
       fetch
     })
+    
+    if (!errorsToClear.isEmpty){
+      storage.clearFullhashErrors(errorsToClear)
+    }
 
     if (toFetch.isEmpty) {
       logger.debug("Fetching of all full hashes has been delayed.")
@@ -319,6 +322,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     hashes.seq
   }
 
+  @throws(classOf[ApiException])
   def requestFullHashes(prefixes: List[Chunk], prefixLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
     if (prefixes.isEmpty) return Nil
 
@@ -344,7 +348,6 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         val msg = "Full hash request failed: " + other
         logger.error(msg)
         prefixes foreach (c => {
-          // TODO: back off mode
           storage.fullHashError(new DateTime(), c.prefix)
         })
         throw new ApiException(msg)
@@ -399,13 +402,13 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       logger.debug("No un-subbed host key");
       return Nil
     }
-    
+
     chunks = chunks.filter(c => expressions.find(e => e.hexHash.startsWith(c.prefix)).isDefined)
-    
+
     if (chunks.isEmpty) {
       logger.debug("No prefix match for any host key");
     }
-    
+
     chunks
   }
 
