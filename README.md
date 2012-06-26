@@ -1,6 +1,9 @@
 # Google Safebrowsing API v2 for Scala and Java
 
-This project implements the [Google Safebrowsing API v2](https://developers.google.com/safe-browsing/) in Scala.
+This project implements the [Google Safebrowsing API v2](https://developers.google.com/safe-browsing/) 
+and the [Google Safebrowsing Lookup API](https://developers.google.com/safe-browsing/lookup_guide) in Scala.
+
+See [Zscaler blog post](http://research.zscaler.com/2011/12/switch-to-google-safe-browsing-v2.html) for other implementations and notes 
 
 ## Usage in Scala
 ### Safe Browsing API
