@@ -49,9 +49,9 @@ object Helpers {
   
   def getMac(data: Array[Byte], key: String) = {
     val SHA1 = "HmacSHA1";
-    val keySpec = new SecretKeySpec(key.getBytes(), SHA1)
+    val keySpec = new SecretKeySpec(Base64.decodeBase64(key), SHA1)
     val mac = Mac.getInstance(SHA1)
     mac.init(keySpec)
-    Base64.encodeBase64URLSafeString(mac.doFinal(data))
+    Base64.encodeBase64URLSafeString(mac.doFinal(data)) + "="
   }
 }

@@ -145,7 +145,6 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     resp.mac.foreach(dataMac => {
       macKey.foreach(ourMac => {
-        // FIXME: MAC validation is failing
         logger.debug("MAC of request: {}", dataMac)
         val data = responseData.replaceAll("""^m:\s*(\S+)\s*\n""", "")
         if (!validateMac(data.getBytes, ourMac.clientKey, dataMac)) {

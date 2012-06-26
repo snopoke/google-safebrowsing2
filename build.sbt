@@ -20,7 +20,8 @@ libraryDependencies ++= Seq(
   "org.mockito" % "mockito-core" % "1.9.0" % "test",
   "org.scalatest" %% "scalatest" % "1.7.1" % "test",
   "com.novocode" % "junit-interface" % "0.8" % "test",
-  "org.hsqldb" % "hsqldb" % "2.2.8" % "test"
+  "org.hsqldb" % "hsqldb" % "2.2.8" % "test",
+  "mysql" % "mysql-connector-java" % "5.1.20" % "test"
 )
 
 testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")
