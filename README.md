@@ -74,7 +74,7 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 ## Dependencies
 * slf4j-api-1.6
 * joda-time-1.6.2
-* scala-http-client-1.0 [link](https://github.com/snopoke/scala-http-client)
+* [scala-http-client-1.0](https://github.com/snopoke/scala-http-client)
 * Apache httpclient-4.1.x
 * Apache httpcore-4.1.x
 * Apache commons-codec-1.4
