@@ -131,7 +131,7 @@ class DBITest {
     val now = new DateTime().withMillisOfSecond(0)
     dbi.updateSuccess(now, now.plusMinutes(5), "list1")
 
-    val status = dbi.getLastUpdate("list1")
+    val status = dbi.getListStatus("list1")
     assertTrue(status.isDefined)
     assertThat(status.get, is(Status(now, Some(now), now.plusMinutes(5), 0)))
   }
@@ -142,7 +142,7 @@ class DBITest {
     dbi.updateSuccess(now.minusHours(1), now.minusHours(1).plusMinutes(5), "list1")
     dbi.updateSuccess(now, now.plusMinutes(5), "list1")
 
-    val status = dbi.getLastUpdate("list1")
+    val status = dbi.getListStatus("list1")
     assertTrue(status.isDefined)
     assertThat(status.get, is(Status(now, Some(now), now.plusMinutes(5), 0)))
   }
@@ -152,7 +152,7 @@ class DBITest {
     val now = new DateTime().withMillisOfSecond(0)
     dbi.updateError(now, "list1")
 
-    val status = dbi.getLastUpdate("list1")
+    val status = dbi.getListStatus("list1")
     assertTrue(status.isDefined)
     assertThat(status.get, is(Status(now, None, now.plusMinutes(1), 1)))
   }
@@ -163,7 +163,7 @@ class DBITest {
     dbi.updateSuccess(now.minusHours(1), now.minusHours(1).plusMinutes(5), "list1")
     dbi.updateError(now, "list1")
 
-    val status = dbi.getLastUpdate("list1")
+    val status = dbi.getListStatus("list1")
     assertTrue(status.isDefined)
     assertThat(status.get, is(Status(now, Some(now.minusHours(1)), now.plusMinutes(1), 1)))
   }

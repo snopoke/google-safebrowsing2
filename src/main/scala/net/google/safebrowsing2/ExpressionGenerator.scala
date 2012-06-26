@@ -24,10 +24,10 @@ import util.Logging
 import util.Helpers._
 
 /**
- * Class does the conversion url -> list of SafeBrowsing expressions.
+ * Class does the conversion URL -> list of SafeBrowsing expressions.
  *
- * This class converts a given url into the list of all SafeBrowsing host-suffix,
- * path-prefix expressions for that url.  These are expressions that are on the
+ * This class converts a given URL into the list of all SafeBrowsing host-suffix,
+ * path-prefix expressions for that URL.  These are expressions that are on the
  * SafeBrowsing lists.
  * 
  * Loosely based on http://code.google.com/p/google-safe-browsing/source/browse/trunk/python/expression.py
@@ -148,6 +148,4 @@ case class Expression(host: String, path: String) {
   val value = host + path
   lazy val rawHash = sha256(value)
   lazy val hexHash = bytes2Hex(rawHash)
-//  lazy val rawPrefix = rawHash.take(4)
-//  lazy val hexPrefix = hexHash.take(8)
 }

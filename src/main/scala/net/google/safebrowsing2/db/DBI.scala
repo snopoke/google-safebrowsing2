@@ -310,7 +310,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
   }
 
   override def updateSuccess(lastAttempt: DateTime, nextAttempt: DateTime, list: String) = {
-    if (getLastUpdate(list).isEmpty) {
+    if (getListStatus(list).isEmpty) {
       execute("INSERT INTO "+TABLE_PREFIX+"Updates (dtLastAttempt, dtLastSuccess, dtNextAttempt, iErrorCount, sList) VALUES (?, ?, ?, 0, ?)", lastAttempt, lastAttempt, nextAttempt, list)
     } else {
       execute("UPDATE "+TABLE_PREFIX+"Updates SET dtLastAttempt = ?, dtLastSuccess = ?, dtNextAttempt = ?, iErrorCount = 0 WHERE sList = ?", lastAttempt, lastAttempt, nextAttempt, list)
@@ -318,7 +318,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
   }
 
   override def updateError(thisAttempt: DateTime, list: String) = {
-    val status = getLastUpdate(list)
+    val status = getListStatus(list)
     if (status.isEmpty) {
       execute("INSERT INTO "+TABLE_PREFIX+"Updates (dtLastAttempt, dtNextAttempt, iErrorCount, sList) VALUES (?, ?, 1, ?)", thisAttempt, thisAttempt.plusMinutes(1), list)
     } else {
@@ -327,7 +327,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-  override def getLastUpdate(list: String): Option[Status] = {
+  override def getListStatus(list: String): Option[Status] = {
     query("SELECT * FROM "+TABLE_PREFIX+"Updates WHERE sList = ? LIMIT 1", list).option(row => {
       val lastAttempt = row.getTimestamp("dtLastAttempt")
       val lastSuccess = Option(row.getTimestamp("dtLastSuccess")).map(new DateTime(_))
@@ -337,11 +337,11 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     })
   }
   
-  override def addFullHashes(lastUpdate: DateTime, full_hashes: Seq[Hash]) = {
-    logger.trace("Add full hashes: {}", full_hashes)
+  override def addFullHashes(fetchTime: DateTime, fullHashes: Seq[Hash]) = {
+    logger.trace("Add full hashes: {}", fullHashes)
 
-    val deleteParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list))
-    val insertParams = full_hashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, lastUpdate))
+    val deleteParams = fullHashes map (hash => Seq(hash.chunknum, hash.hash, hash.list))
+    val insertParams = fullHashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, fetchTime))
     executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE iAddChunkNum = ? AND sHash = ? AND sList = ?", deleteParams)
     executeBatch("INSERT INTO "+TABLE_PREFIX+"FullHashes (iAddChunkNum, sHash, sList, dtLastUpdate) VALUES (?, ?, ?, ?)", insertParams)
   }
@@ -419,7 +419,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
    * Calculate error count and nextAttempt for updates
    * @see https://developers.google.com/safe-browsing/developers_guide_v2#RequestFrequencyData
    */
-  def updateBackoff(thisAttempt: DateTime, lastUpdate: Status): (Int, DateTime) = {
+  protected[db] def updateBackoff(thisAttempt: DateTime, lastUpdate: Status): (Int, DateTime) = {
      // lastUpdate.errors will always be >= 1 here
     val errors = lastUpdate.errors + 1
     val lastWaitSeconds = new Duration(lastUpdate.lastAttempt, lastUpdate.nextAttempt).getStandardSeconds()
@@ -437,7 +437,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
    * Calculate error count and nextAttempt using full hash requests
    * @see https://developers.google.com/safe-browsing/developers_guide_v2#RequestFrequencyHashes
    */
-  def fullHashBackoff(thisAttempt: DateTime, lastError: Status): (Int, DateTime) = {
+  protected[db] def fullHashBackoff(thisAttempt: DateTime, lastError: Status): (Int, DateTime) = {
     // lastError.errors will always be >= 1 here
     var errors = lastError.errors+1
     val secondsSinceLast = new Duration(lastError.lastAttempt, thisAttempt).getStandardSeconds()

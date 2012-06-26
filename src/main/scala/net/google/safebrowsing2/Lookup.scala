@@ -122,7 +122,7 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
     results.toMap
   }
 
-  def parseResponse(response: String, urls: Seq[String]): Map[String, String] = {
+  private def parseResponse(response: String, urls: Seq[String]): Map[String, String] = {
     val results = mutable.Map.empty[String, String]
     val lines = response.split("\n")
     if (lines.length != urls.length) {

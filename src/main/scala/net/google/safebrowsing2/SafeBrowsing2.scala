@@ -41,6 +41,11 @@ import org.joda.time.Period
 import db.Storage
 import org.joda.time.Duration
 
+/**
+ * This is the main class used to interface with the Google Safe Browsing API v2
+ * 
+ * 
+ */
 class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
@@ -50,6 +55,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   var httpClient: Client = new Client
 
   /**
+   * Update the database with the latest data
+   * 
    * @param listName the list to update or null to update all lists
    * @param force if true force the update ignoring wait times
    * @param withMac if true request using Message Authentication Codes
@@ -69,7 +76,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     // filter list based on when we last updated it
     val toUpdate = candidates.filter(listName => {
-      val info = storage.getLastUpdate(listName)
+      val info = storage.getListStatus(listName)
       val tooEarly = !force && info.map(_.nextAttempt.isAfter(now)).getOrElse(false)
       if (tooEarly) {
 
@@ -227,7 +234,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   @throws(classOf[ApiException])
-  def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
+  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
 
     // Local lookup
     val add_chunks = local_lookup_suffix(hostKey, expressions)
@@ -274,7 +281,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    *  Request full full hashes for specific prefixes from Google.
    */
   @throws(classOf[ApiException])
-  def requestFullHashes(chunks: Seq[Chunk], withMac: Boolean): Seq[Hash] = {
+  protected[safebrowsing2] def requestFullHashes(chunks: Seq[Chunk], withMac: Boolean): Seq[Hash] = {
 
     var macKey: Option[MacKey] = None
     if (withMac) {
@@ -323,7 +330,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   @throws(classOf[ApiException])
-  def requestFullHashes(prefixes: List[Chunk], prefixLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
+  private def requestFullHashes(prefixes: List[Chunk], prefixLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
     if (prefixes.isEmpty) return Nil
 
     prefixes foreach (p => {
@@ -366,7 +373,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     }
   }
 
-  def parseFullHashes(data: Array[Byte], macKey: Option[MacKey]): Seq[Hash] = {
+  protected[safebrowsing2] def parseFullHashes(data: Array[Byte], macKey: Option[MacKey]): Seq[Hash] = {
     val parsed = FullHashParser.parse(data) match {
       case FullHashParser.Success(c, _) => Option(c)
       case x => logger.error("Error parsing full hash data: {}", x); return Nil
@@ -395,7 +402,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  def local_lookup_suffix(host_key: String, expressions: Seq[Expression]): Seq[Chunk] = {
+  protected[safebrowsing2] def local_lookup_suffix(host_key: String, expressions: Seq[Expression]): Seq[Chunk] = {
 
     var chunks = storage.getChunksForHostKey(host_key)
     if (chunks.isEmpty) {
@@ -412,7 +419,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     chunks
   }
 
-  def getExistingChunks(lists: Array[String], withMac: Boolean): String = {
+  protected[safebrowsing2] def getExistingChunks(lists: Array[String], withMac: Boolean): String = {
     var body = ""
 
     lists foreach (list => {
@@ -438,7 +445,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     body
   }
 
-  def processDelAd(nums: List[Int], list: String) = {
+  private def processDelAd(nums: List[Int], list: String) = {
     logger.debug("Delete Add Chunks: {}", nums)
     storage.deleteAddChunks(nums, list)
 
@@ -446,13 +453,13 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     storage.deleteFullHashes(nums, list)
   }
 
-  def processDelSub(nums: List[Int], list: String) = {
+  private def processDelSub(nums: List[Int], list: String) = {
     logger.debug("Delete Sub Chunks: {}", nums)
     storage.deleteSubChunks(nums, list)
   }
 
   @throws(classOf[ApiException])
-  def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]) = {
+  protected[safebrowsing2] def processRedirect(url: String, hmac: Option[String], listName: String, macKey: Option[MacKey]) = {
     logger.debug("Checking redirection http://{} ({})", url, listName)
     val res = httpClient.GET("http://" + url)
 
@@ -503,7 +510,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     })
   }
 
-  def getMacKeys: Option[MacKey] = {
+  private def getMacKeys: Option[MacKey] = {
     val keys = storage.getMacKey
     keys orElse ({
       val key = requestMacKeys
@@ -514,7 +521,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     })
   }
 
-  def requestMacKeys: Option[MacKey] = {
+  private def requestMacKeys: Option[MacKey] = {
     logger.debug("Requesting mac keys")
     val url = "http://sb-ssl.google.com/safebrowsing/newkey"
     val c = new Client
@@ -530,7 +537,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     }
   }
 
-  def processMacResponse(res: String): Option[MacKey] = {
+  protected[safebrowsing2]  def processMacResponse(res: String): Option[MacKey] = {
     logger.trace("MAC Response:\n{}", res)
     val Client = "^clientkey:(\\d+):(.*)$".r
     val Wrapped = "^wrappedkey:(\\d+):(.*)$".r
@@ -551,7 +558,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     Some(MacKey(clientkey, wrappedkey))
   }
 
-  def createRange(numbers: Seq[Int]): String = {
+  protected[safebrowsing2] def createRange(numbers: Seq[Int]): String = {
     if (numbers == null || numbers.isEmpty) {
       return ""
     }
@@ -576,7 +583,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     range
   }
 
-  def validateMac(data: Array[Byte], key: String, digest: String): Boolean = {
+  private def validateMac(data: Array[Byte], key: String, digest: String): Boolean = {
     val sig = getMac(data, key)
     logger.debug("Mac check: {} / {}", sig, digest)
     sig == digest
