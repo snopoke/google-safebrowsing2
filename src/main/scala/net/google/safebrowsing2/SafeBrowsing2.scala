@@ -203,7 +203,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    *
    * @param url
    * @param listName Optional. Lookup against a specific list.
-   * @returns Returns List name if there is a match or null
+   * @return List name if there is a match or null
    *
    * Java compatibility method
    */
@@ -216,7 +216,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    *
    * @param url
    * @param listName Optional. Lookup against a specific list.
-   * @returns Returns Option(list name) if there is a match or None.
+   * @return Option(list name) if there is a match or None.
    */
   @throws(classOf[ApiException])
   def lookup(url: String, listName: String, withMac: Boolean): Option[String] = {

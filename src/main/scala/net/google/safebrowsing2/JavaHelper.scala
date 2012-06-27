@@ -23,6 +23,9 @@ import java.sql.Connection
 import javax.sql.DataSource
 import net.google.safebrowsing2.db.MSSQL
 
+/**
+ * Provides helper methods to make creating [[Storage]] classes easier from Java.
+ */
 object JavaHelper {
 
   def buildStorageMySQL(url: String, username: String, password: String, tablePrefix: String): Storage = {

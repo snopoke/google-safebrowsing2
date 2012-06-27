@@ -24,13 +24,13 @@ import util.Logging
 import util.Helpers._
 
 /**
- * Class does the conversion URL -> list of SafeBrowsing expressions.
+ * Does the conversion URL -> list of SafeBrowsing expressions.
  *
- * This class converts a given URL into the list of all SafeBrowsing host-suffix,
+ * Converts a given URL into the list of all SafeBrowsing host-suffix,
  * path-prefix expressions for that URL.  These are expressions that are on the
  * SafeBrowsing lists.
  * 
- * Loosely based on http://code.google.com/p/google-safe-browsing/source/browse/trunk/python/expression.py
+ * Based on http://code.google.com/p/google-safe-browsing/source/browse/trunk/python/expression.py
  */
 class ExpressionGenerator(inputUrl: String) extends Logging {
 
@@ -64,7 +64,7 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
    *
    * @param url the canonicalized URL
    */
-  def makePathList(url: URL): Seq[String] = {
+  protected[safebrowsing2] def makePathList(url: URL): Seq[String] = {
     val paths = new mutable.ListBuffer[String]()
 
     val canonical_path = url.getPath()
@@ -92,7 +92,7 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
     paths.seq
   }
 
-  def canonicalizeUrl(url: String): String = {
+  private def canonicalizeUrl(url: String): String = {
     val cleanurl = URLUtils.getInstance().canonicalizeURL(url)
     if (cleanurl == null)
       throw new UrlParseException
@@ -103,7 +103,7 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
   /**
    * Find all canonical domains for a domain.
    */
-  def makeHostList(domain: String): Seq[String] = {
+  protected[safebrowsing2] def makeHostList(domain: String): Seq[String] = {
 
     if (domain.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
@@ -130,7 +130,7 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
    * @param host the canonicalized host
    * @return host key
    */
-  def makeHostKey(host: String): String = {
+  protected[safebrowsing2] def makeHostKey(host: String): String = {
 
     if (host.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough

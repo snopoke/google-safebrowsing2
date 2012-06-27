@@ -23,9 +23,10 @@ import com.buildabrand.gsb.util.URLUtils
 import util.Logging
 
 /**
- * Lookup implements the Google Safe Browsing v2 Lookup API.
+ * Implements the Google Safe Browsing v2 Lookup API.
  *
- * If you need to check more than 10,000 URLs a day, you need to use {@link net.google.safebrowsing2.SafeBrowsing2}
+ * If you need to check more than 10,000 URLs a day, 
+ * you need to use [[net.google.safebrowsing2.SafeBrowsing2]]
  *
  * @see http://code.google.com/apis/safebrowsing/lookup_guide.html
  * @param apikey the Google Safe Browsing API key to use in any requests
