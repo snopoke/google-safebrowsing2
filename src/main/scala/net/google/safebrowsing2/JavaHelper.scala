@@ -24,7 +24,7 @@ import javax.sql.DataSource
 import net.google.safebrowsing2.db.MSSQL
 
 /**
- * Provides helper methods to make creating [[Storage]] classes easier from Java.
+ * Provides helper methods to make creating [[net.google.safebrowsing2.db.Storage]] classes easier from Java.
  */
 object JavaHelper {
 

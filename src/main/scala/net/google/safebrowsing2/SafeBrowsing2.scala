@@ -49,7 +49,7 @@ import org.joda.time.Duration
 class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   val MALWARE = "goog-malware-shavar"
   val PHISHING = "googpub-phish-shavar"
-  val lists = Array(MALWARE, PHISHING)
+  val defaultLists = Array(MALWARE, PHISHING)
   val appver = "0.1"
   var pver = "2.2"
   var httpClient: Client = new Client
@@ -57,18 +57,18 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Update the database with the latest data
    * 
-   * @param listName the list to update or null to update all lists
+   * @param lists the lists to update or if null or empty, update the default lists
    * @param force if true force the update ignoring wait times
    * @param withMac if true request using Message Authentication Codes
    * @return the number of seconds to wait before updating again
    */
   @throws(classOf[ApiException])
-  def update(listName: String, force: Boolean = false, withMac: Boolean = false): Int = {
+  def update(lists: Array[String], force: Boolean = false, withMac: Boolean = false): Int = {
 
-    val candidates: Array[String] = if (listName == null || !listName.isEmpty()) {
-      Array(listName)
-    } else {
+    val candidates: Array[String] = if (lists != null && !lists.isEmpty) {
       lists
+    } else {
+      defaultLists
     }
 
     val now = new DateTime()
@@ -140,7 +140,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     if (resp.rekey) {
       logger.debug("Re-key requested")
       storage.deleteMacKeys
-      return update(listName, force, withMac)
+      return update(lists, force, withMac)
     }
 
     resp.mac.foreach(dataMac => {
@@ -202,28 +202,28 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    * Lookup a URL against the Google Safe Browsing database.
    *
    * @param url
-   * @param listName Optional. Lookup against a specific list.
+   * @param lists Optional. Lookup against a specific lists.
    * @return List name if there is a match or null
    *
    * Java compatibility method
    */
-  def jlookup(url: String, listName: String, withMac: Boolean): String = {
-    lookup(url, listName, withMac).orNull
+  def jlookup(url: String, lists: Array[String], withMac: Boolean): String = {
+    lookup(url, lists, withMac).orNull
   }
 
   /**
    * Lookup a URL against the Google Safe Browsing database.
    *
    * @param url
-   * @param listName Optional. Lookup against a specific list.
+   * @param listName Optional. Lookup against a specific lists.
    * @return Option(list name) if there is a match or None.
    */
   @throws(classOf[ApiException])
-  def lookup(url: String, listName: String, withMac: Boolean): Option[String] = {
-    val candidates: Array[String] = if (!listName.isEmpty()) {
-      Array(listName)
-    } else {
+  def lookup(url: String, lists: Array[String], withMac: Boolean): Option[String] = {
+    val candidates: Array[String] = if (lists != null && !lists.isEmpty) {
       lists
+    } else {
+      defaultLists
     }
 
     val generator = new ExpressionGenerator(url)

@@ -1,12 +1,10 @@
-seq((
-  Project.defaultSettings
-): _*)
-
 resolvers += Resolver.mavenLocal
 
-name := "Google Safebrowsing2"
+organization := "com.github.snopoke"
 
-version := "0.1"
+name := "safebrowsing2"
+
+version := "0.1.0"
 
 scalaVersion := "2.9.1"
 
@@ -28,11 +26,11 @@ testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")
 
 resolvers <<= (resolvers) { r =>
   (Option(System.getenv("SBT_PROXY_REPO")) map { url =>
-    Seq("proxy-repo" at url)
+    Seq("proxy-repo" at url, Resolver.defaultLocal, Resolver.mavenLocal)
   } getOrElse {
     r ++ Seq(
       "scala-tools" at "http://scala-tools.org/repo-releases/",
       "maven" at "http://repo1.maven.org/maven2/"
-    )
+    ) ++ Seq(Resolver.defaultLocal, Resolver.mavenLocal)
   })
 }
