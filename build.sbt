@@ -10,8 +10,8 @@ scalaVersion := "2.9.1"
 
 libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-api" % "1.6.4",
-  "org.slf4j" % "slf4j-log4j12" % "1.6.4",
-  "log4j" % "log4j" % "1.2.16",
+  "org.slf4j" % "slf4j-log4j12" % "1.6.4" % "provided",
+  "log4j" % "log4j" % "1.2.16" % "provided",
   "joda-time" % "joda-time" % "1.6.2",
   "com.github.tototoshi" %% "scala-http-client" % "1.0",
   "junit" % "junit" % "4.10" % "test",
