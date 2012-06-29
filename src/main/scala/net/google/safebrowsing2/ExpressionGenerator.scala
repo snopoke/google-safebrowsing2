@@ -48,6 +48,10 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
   val path_exprs = makePathList(url)
 
   lazy val hostKey = bytes2Hex(sha256(makeHostKey(canonical_host)).take(4))
+  
+  def getHostKey = {
+    hostKey
+  }
 
   def expressions: Seq[Expression] = {
     for (
@@ -56,6 +60,10 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
     ) yield new Expression(host, path)
   }
 
+  def getExpressions: Array[Expression] = {
+    expressions.toArray
+  }
+  
   /**
    * Get the first three directory path components and create the 4 path
    * expressions starting at the root (/) and successively appending directory

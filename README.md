@@ -42,23 +42,26 @@ Outputs:
 	String apikey = "123456";
 	String url = "jdbc:mysql://localhost:3306/googlesafebrowsing2";
 	String tablePrefix = "gsb2_";
+	
 	Storage storage = JavaHelper.buildStorageMySQL(url, "user", "password", tablePrefix);
 	SafeBrowsing2 sb2 = new SafeBrowsing2(apikey, storage);
 	
 	// update the database
 	boolean forceUpdate = false;
 	boolean useMac = false;
-	int secondsToWaitBeforeNextUpdate = sb2.update("", forceUpdate, useMac);
+	String[] updateLists = null; // update all lists
+	int wait = sb2.update(updateLists, forceUpdate, useMac);
+	System.out.println("Seconds to wait before next update: " + wait);
 	
 	// lookup url in database
-	String list = ""; // lookup in all lists
-	String match = sb2.jlookup("http://ianfette.org", list, useMac);
+	String[] lookupLists = null; // lookup in all lists
+	String match = sb2.jlookup("http://ianfette.org", lookupLists, useMac);
 	if (match != null)
-		System.out.println("Match found in list: " + list);
+		System.out.println("Match found in list: " + match);
 	
 ### Lookup API
 	Lookup lookup = new Lookup(apikey, "appname");
-	Map<String, String> r = lookup.jlookup(new String[]{"http://ianfette.org"});
+	Map<String, String> r = lookup.jlookup(new String[]{"http://ianfette.org"}, 0);
 	for (String key : r.keySet()) {
 		System.out.println(key + " -> " + r.get(key));
 	}
@@ -75,8 +78,8 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 * slf4j-api-1.6
 * joda-time-1.6.2
 * [scala-http-client-1.0](https://github.com/snopoke/scala-http-client)
-* Apache httpclient-4.1.x
-* Apache httpcore-4.1.x
+* Apache httpclient-4.1
+* Apache httpcore-4.1
 * Apache commons-codec-1.4
 * scala-library-2.9.1
 
