@@ -182,5 +182,7 @@ abstract trait Storage {
    * Remove full hashes that are older than 45 minutes
    */
   def clearExpiredHashes
+  
+  def getDatabaseStats: Map[String, String]
 
 }

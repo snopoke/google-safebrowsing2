@@ -17,21 +17,21 @@
 package net.google.safebrowsing2.db
 
 import java.sql.Connection
-import java.util.Date
+
 import scala.collection.mutable
+
+import org.joda.time.DateTime
+import org.joda.time.Duration
+import org.joda.time.Period
+
 import javax.sql.DataSource
+import net.google.safebrowsing2.Chunk
+import net.google.safebrowsing2.Hash
+import net.google.safebrowsing2.MacKey
+import net.google.safebrowsing2.Status
 import util.JdbcTemplate
 import util.LiteDataSource
-import net.google.safebrowsing2.MacKey
-import net.google.safebrowsing2.Hash
-import net.google.safebrowsing2.Chunk
-import net.google.safebrowsing2.Status
-import org.joda.time.Period
-import org.joda.time.DateTime
-import org.joda.time.DateTime
-import net.google.safebrowsing2.Expression
 import util.Logging
-import org.joda.time.Duration
 
 /**
  * Base Storage class used to access the database.
@@ -413,6 +413,19 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
 
   override def clearExpiredHashes = {
     execute("DELETE FROM "+TABLE_PREFIX+"FullHashes WHERE dtLastupdate < ?", new DateTime().minusMinutes(45))
+  }
+  
+  override def getDatabaseStats: Map[String, String] = {
+    val addChunks = query("SELECT count(*) as c FROM "+TABLE_PREFIX+"AddChunks").single[Int]
+    val subChunks = query("SELECT count(*) as c FROM "+TABLE_PREFIX+"SubChunks").single[Int]
+    val fullHashes = query("SELECT count(*) as c FROM "+TABLE_PREFIX+"FullHashes").single[Int]
+    val fullHasheErrors = query("SELECT count(*) as c FROM "+TABLE_PREFIX+"FullHashErrors").single[Int]
+    
+    Map("Add chunk count" -> addChunks.toString,
+        "Sub chunk count" -> subChunks.toString,
+        "Full hash count" -> fullHashes.toString,
+        "Full hash error count" -> fullHasheErrors.toString
+        )
   }
   
   /**
