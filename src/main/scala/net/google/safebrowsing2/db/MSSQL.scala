@@ -120,11 +120,18 @@ class MSSQL(jt: JdbcTemplate, tablePrefix: String) extends DBI(jt, tablePrefix) 
 			sHash VARCHAR( 64 ),
 			sList VARCHAR( 50 ),
 			dtLastUpdate DATETIME NOT NULL,
-      		PRIMARY KEY (iAddChunkNum,sHash,sList)
 		)
 	"""
-
     execute(schema)
+    
+    val index = """
+		CREATE UNIQUE INDEX IDX"""+TABLE_PREFIX+"""FullHashes_Unique ON """+TABLE_PREFIX+"""FullHashes (
+			iAddChunkNum,
+			sHash,
+			sList
+		)
+	"""
+	execute(index)
   }
 
   override def createTableFullHashErrors = {
