@@ -33,8 +33,11 @@ public class JavaCompatabilityTest {
 			System.out.println("Match found in list: " + match);
 	}
 	
-	public void lookup() {
-		Lookup lookup = new Lookup(apikey, "appname");
+	public void lookup(String baseUrl) {
+		if (baseUrl == null || baseUrl.isEmpty()){
+			baseUrl = "https://sb-ssl.google.com/safebrowsing/api/";
+		}
+		Lookup lookup = new Lookup(apikey, "appname", baseUrl, "3.0");
 		Map<String, String> r = lookup.jlookup(new String[]{"http://ianfette.org"}, 0);
 		for (String key : r.keySet()) {
 			System.out.println(key + " -> " + r.get(key));
@@ -49,5 +52,9 @@ public class JavaCompatabilityTest {
 		for (Expression exp : gen.getExpressions()) {
 			System.out.println("	" + exp.value() + " -> " + exp.hexHash());
 		}
+	}
+	
+	public static void main(String[] args) {
+		new JavaCompatabilityTest().lookup("http://192.168.1.114:8082/");
 	}
 }
