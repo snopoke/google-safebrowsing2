@@ -17,11 +17,8 @@
 package net.google.safebrowsing2.db
 
 import org.joda.time.DateTime
+import net.google.safebrowsing2._
 
-import net.google.safebrowsing2.Chunk
-import net.google.safebrowsing2.Hash
-import net.google.safebrowsing2.MacKey
-import net.google.safebrowsing2.Status
 
 /**
  * This trait represents the interface between the API and the database.
@@ -32,21 +29,19 @@ abstract trait Storage {
    * Add 'sub chunks' to the database
    *
    * @param chunknum the chunks identifying number
-   * @param hostkey the chunks host key
-   * @param chunks tuple (add chunk number, prefix)
+   * @param hostkeyChunks tuple (host key, tuple (add chunk number, prefix)) to add
    * @param list the blacklist to add the chunk to
    */
-  def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int, String)], list: String)
+  def addChunks_s(chunknum: Int, hostkeyChunks: Seq[(String,  Seq[(Int, String)])], list: String)
 
   /**
    * Add 'add chunks' to the database
    *
    * @param chunknum the chunks identifying number
-   * @param hostkey the chunks host key
-   * @param prefixes list of prefixes to add
+   * @param hostkeyPrefixes tuple (host key, list of prefixes) to add
    * @param list the blacklist to add the chunk to
    */
-  def addChunks_a(chunknum: Int, hostkey: String, prefixes: Seq[String], list: String)
+  def addChunks_a(chunknum: Int, hostkeyPrefixes: Seq[(String, Seq[String])], list: String)
 
   /**
    * Get all add chunks for the given host key that have not been
@@ -146,7 +141,7 @@ abstract trait Storage {
    * given list of chunks
    * @param chunks the list of chunks to clear errors for
    */
-  def clearFullhashErrors(chunks: Seq[Chunk])
+  def clearFullhashErrors(expressions: Seq[Expression])
 
   /**
    * Get the error status for the given prefix
