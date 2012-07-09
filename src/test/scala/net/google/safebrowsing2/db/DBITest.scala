@@ -5,12 +5,9 @@ import org.junit.Assert._
 import org.hamcrest.CoreMatchers._
 import util.JdbcTemplate
 import util.LiteDataSource
-import net.google.safebrowsing2.Chunk
-import net.google.safebrowsing2.Hash
-import net.google.safebrowsing2.Status
-import net.google.safebrowsing2.MacKey
 import org.joda.time.DateTime
 import org.joda.time.Duration
+import net.google.safebrowsing2._
 
 class DBITest {
 
@@ -28,7 +25,7 @@ class DBITest {
 
   @Test
   def testAddChunks_a = {
-    dbi.addChunks_a(123, "hostkey", Seq("p1", "p2"), "list1")
+    dbi.addChunks_a(123, Seq(("hostkey", Seq("p1", "p2"))), "list1")
     val res = jt.query("SELECT * FROM " + dbi.TABLE_PREFIX + "AddChunks WHERE sList = ?", "list1").seq(rs => {
       (rs.getInt("iAddChunkNum"),
         rs.getString("sHostkey"),
@@ -41,8 +38,24 @@ class DBITest {
   }
 
   @Test
+  def testAddChunks_aMultiple = {
+    dbi.addChunks_a(123, Seq(("hostkey1", Seq("p1", "p2")),("hostkey2", Seq("p3")),("hostkey3", Seq(""))), "list1")
+    val res = jt.query("SELECT * FROM " + dbi.TABLE_PREFIX + "AddChunks WHERE sList = ?", "list1").seq(rs => {
+      (rs.getInt("iAddChunkNum"),
+        rs.getString("sHostkey"),
+        rs.getString("sPrefix"),
+        rs.getString("sList"))
+    })
+    assertThat(res.length, is(4))
+    assertThat(res(0), is((123, "hostkey1", "p1", "list1")))
+    assertThat(res(1), is((123, "hostkey1", "p2", "list1")))
+    assertThat(res(2), is((123, "hostkey2", "p3", "list1")))
+    assertThat(res(3), is((123, "hostkey3", "", "list1")))
+  }
+
+  @Test
   def testAddChunks_s = {
-    dbi.addChunks_s(123, "hostkey", Seq((1, "p1"), (2, "p2")), "list1")
+    dbi.addChunks_s(123, Seq(("hostkey", Seq((1, "p1"), (2, "p2")))), "list1")
     val res = jt.query("SELECT * FROM " + dbi.TABLE_PREFIX + "SubChunks WHERE sList = ?", "list1").seq(rs => {
       (rs.getInt("iAddChunkNum"),
         rs.getInt("iSubChunkNum"),
@@ -56,10 +69,27 @@ class DBITest {
   }
 
   @Test
+  def testAddChunks_sMultiple = {
+    dbi.addChunks_s(123, Seq(("hostkey1", Seq((1, "p1"), (2, "p2"))),("hostkey2", Seq((3, "p3"))),("hostkey3", Seq((4, "")))), "list1")
+    val res = jt.query("SELECT * FROM " + dbi.TABLE_PREFIX + "SubChunks WHERE sList = ?", "list1").seq(rs => {
+      (rs.getInt("iAddChunkNum"),
+        rs.getInt("iSubChunkNum"),
+        rs.getString("sHostkey"),
+        rs.getString("sPrefix"),
+        rs.getString("sList"))
+    })
+    assertThat(res.length, is(4))
+    assertThat(res(0), is((1, 123, "hostkey1", "p1", "list1")))
+    assertThat(res(1), is((2, 123, "hostkey1", "p2", "list1")))
+    assertThat(res(2), is((3, 123, "hostkey2", "p3", "list1")))
+    assertThat(res(3), is((4, 123, "hostkey3", "", "list1")))
+  }
+
+  @Test
   def testGetChunksForHostKey = {
-    dbi.addChunks_a(1, "hostkey", Seq("p1", "p2"), "list1")
-    dbi.addChunks_a(2, "hostkey", Seq("p3", "p4"), "list1")
-    dbi.addChunks_s(3, "hostkey", Seq((1, "p1"), (2, "p3")), "list1")
+    dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey", Seq("p3", "p4"))), "list1")
+    dbi.addChunks_s(3, Seq(("hostkey", Seq((1, "p1"), (2, "p3")))), "list1")
 
     val chunks = dbi.getChunksForHostKey("hostkey")
     assertThat(chunks.length, is(2))
@@ -69,8 +99,8 @@ class DBITest {
 
   @Test
   def testGetAddChunksNums = {
-    dbi.addChunks_a(1, "hostkey", Seq("p1", "p2"), "list1")
-    dbi.addChunks_a(2, "hostkey", Seq("p3", "p4"), "list2")
+    dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey", Seq("p3", "p4"))), "list2")
 
     val nums = dbi.getAddChunksNums("list1")
     assertThat(nums.length, is(1))
@@ -79,8 +109,8 @@ class DBITest {
 
   @Test
   def testGetSubChunksNums = {
-    dbi.addChunks_s(1, "hostkey", Seq((1, "p1"), (1, "p3")), "list1")
-    dbi.addChunks_s(2, "hostkey", Seq((2, "p2"), (2, "p4")), "list2")
+    dbi.addChunks_s(1, Seq(("hostkey", Seq((1, "p1"), (1, "p3")))), "list1")
+    dbi.addChunks_s(2, Seq(("hostkey", Seq((2, "p2"), (2, "p4")))), "list2")
 
     val nums = dbi.getSubChunksNums("list1")
     assertThat(nums.length, is(1))
@@ -89,9 +119,9 @@ class DBITest {
 
   @Test
   def testDeleteAddChunks = {
-    dbi.addChunks_a(1, "hostkey", Seq("p1", "p2"), "list1")
-    dbi.addChunks_a(2, "hostkey", Seq("p3", "p4"), "list1")
-    dbi.addChunks_a(1, "hostkey", Seq("p1", "p2"), "list2")
+    dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey", Seq("p3", "p4"))), "list1")
+    dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list2")
 
     dbi.deleteAddChunks(Seq(1, 2), "list1")
     val nums = dbi.getAddChunksNums("list1")
@@ -103,9 +133,9 @@ class DBITest {
 
   @Test
   def testDeleteSubChunks = {
-    dbi.addChunks_s(1, "hostkey", Seq((1, "p1"), (1, "p3")), "list1")
-    dbi.addChunks_s(2, "hostkey", Seq((1, "p2"), (1, "p4")), "list1")
-    dbi.addChunks_s(1, "hostkey", Seq((2, "p2"), (2, "p4")), "list2")
+    dbi.addChunks_s(1, Seq(("hostkey", Seq((1, "p1"), (1, "p3")))), "list1")
+    dbi.addChunks_s(2, Seq(("hostkey", Seq((1, "p2"), (1, "p4")))), "list1")
+    dbi.addChunks_s(1, Seq(("hostkey", Seq((2, "p2"), (2, "p4")))), "list2")
 
     dbi.deleteSubChunks(Seq(1, 2), "list1")
     val nums = dbi.getSubChunksNums("list1")
@@ -220,11 +250,13 @@ class DBITest {
 
   @Test
   def testClearFullHashErrors = {
-    val now = new DateTime().withMillisOfSecond(0)
-    dbi.fullHashError(now, "hash1")
+    val expression = Expression("host","path")
 
-    dbi.clearFullhashErrors(Seq(Chunk(123, "hash1", "hostkey", "list1")))
-    val status = dbi.getFullHashError("hash1")
+    val now = new DateTime().withMillisOfSecond(0)
+    dbi.fullHashError(now, expression.hexHash)
+
+    dbi.clearFullhashErrors(Seq(expression))
+    val status = dbi.getFullHashError(expression.hexHash)
     assertTrue(status.isEmpty)
   }
 

@@ -20,6 +20,7 @@ import org.junit.Test
 import org.junit.Assert._
 import org.hamcrest.CoreMatchers._
 import net.google.safebrowsing2.parsers.DataParser._
+import com.github.tototoshi.http.Client
 
 class DataParserTests {
 
@@ -70,9 +71,7 @@ class DataParserTests {
     
     // AddChunk with count = 0
     val add = parsed.get(0).asInstanceOf[AddChunk]
-    assertThat(add.hostkey, is("090A0B0C"))
-    assertThat(add.count, is(0))
-    assertThat(add.prefixes, is(List("090A0B0C")))
+    assertThat(add.addList, is(List(("090A0B0C",List("")))))
   }  
   
   @Test
@@ -88,9 +87,7 @@ class DataParserTests {
     
     // AddChunk with count = 0
     val add = parsed.get(0).asInstanceOf[AddChunk]
-    assertThat(add.hostkey, is(""))
-    assertThat(add.count, is(0))
-    assertThat(add.prefixes, is(List("")))
+    assertTrue(add.addList.isEmpty)
   }  
   
   @Test
@@ -107,9 +104,57 @@ class DataParserTests {
     
     // AddChunk with count = 2
     val add = parsed.get(0).asInstanceOf[AddChunk]
-    assertThat(add.hostkey, is("090A0B0C"))
-    assertThat(add.count, is(2))
-    assertThat(add.prefixes, is(List("0304","0506")))
+    assertThat(add.addList, is(List(("090A0B0C",List("0304","0506")))))
+  }
+
+  @Test
+  def testParse_addGTMultiple = {
+    val data = "a:6:2:21\n" +
+    		new String(Array(9,10,11,12,2,3,4,5,6,
+                         1,2,3,4,0,
+                         10,11,12,13,1,10,8): Array[Byte])
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+
+    // AddChunk with count = 2
+    val add = parsed.get(0).asInstanceOf[AddChunk]
+    assertThat(add.addList, is(List(("090A0B0C",List("0304","0506")),("01020304",List("")),("0A0B0C0D",List("0A08")))))
+  }
+
+  @Test
+  def testParse_addCountUnsigned = {
+    // Count = 128 (0x80)
+    var chunk:Array[Byte] = Array(15,15,15,15,-128)
+    for (i <- 0 until 128) {
+      chunk ++= (Array(-127): Array[Byte])
+    }
+    val header = "a:3:1:" + chunk.size + "\n";
+    val data = header.getBytes ++ chunk;
+    //val data = "s:3:1:" + chunk.size + "\n" + new String(chunk: Array[Byte]);
+
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+
+    val add = parsed.get(0).asInstanceOf[AddChunk]
+    val addList = add.addList
+    assertThat(addList.size, is(1))
+    val hostkeyPrefixes = addList.head
+    assertThat(hostkeyPrefixes._1, is("0F0F0F0F"))
+    val prefixes = hostkeyPrefixes._2
+    assertThat(prefixes.size, is(128))
+    prefixes foreach (prefix => {
+      assertThat(prefix, is("81"))
+    })
   }
   
   @Test
@@ -126,9 +171,7 @@ class DataParserTests {
     
     // SubChunk with count = 0
     val sub = parsed.get(0).asInstanceOf[SubChunk]
-    assertThat(sub.hostkey, is("090A0B0C"))
-    assertThat(sub.count, is(0))
-    assertThat(sub.pairs, is(List((6,"090A0B0C"))))
+    assertThat(sub.subList, is(List(("090A0B0C",List((6,""))))))
   }
   
   @Test
@@ -144,9 +187,7 @@ class DataParserTests {
     
     // SubChunk with count = 0
     val sub = parsed.get(0).asInstanceOf[SubChunk]
-    assertThat(sub.hostkey, is(""))
-    assertThat(sub.count, is(0))
-    assertTrue(sub.pairs.isEmpty)
+    assertTrue(sub.subList.isEmpty)
   }
   
   @Test
@@ -163,8 +204,57 @@ class DataParserTests {
     
     // SubChunk with count = 2
     val sub = parsed.get(0).asInstanceOf[SubChunk]
-    assertThat(sub.hostkey, is("090A0B0C"))
-    assertThat(sub.count, is(2))
-    assertThat(sub.pairs, is(List((256,"0101"), (65536, "0F0F"))))
+    assertThat(sub.subList, is(List(("090A0B0C",List((256,"0101"), (65536, "0F0F"))))))
+  }
+
+  @Test
+  def testParse_subMultiple = {
+    val data = "s:3:2:37\n" +
+    		new String(Array(9,10,11,12,2,0,0,1,0,1,1,0,1,0,0,15,15,
+                         1,2,3,4,0,1,0,0,2,
+                         10,11,12,13,1,0,0,0,1,1,8): Array[Byte])
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+
+    // SubChunk with count = 2
+    val sub = parsed.get(0).asInstanceOf[SubChunk]
+    assertThat(sub.subList, is(List(("090A0B0C",List((256,"0101"), (65536,"0F0F"))),("01020304",List((16777218,""))),("0A0B0C0D",List((1,"0108"))))))
+  }
+
+  @Test
+  def testParse_subCountUnsigned = {
+    // Count = 128 (0x80)
+    var chunk:Array[Byte] = Array(15,15,15,15,-128)
+    for (i <- 0 until 128) {
+      chunk ++= (Array(10,11,12,13,-127): Array[Byte])
+    }
+    val header = "s:3:1:" + chunk.size + "\n";
+    val data = header.getBytes ++ chunk;
+    //val data = "s:3:1:" + chunk.size + "\n" + new String(chunk: Array[Byte]);
+
+    val parsed = DataParser.parse(data) match {
+      case DataParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+
+    assertTrue("Parsing failed", parsed.isDefined)
+    assertThat(parsed.get.size, is(1))
+
+    val sub = parsed.get(0).asInstanceOf[SubChunk]
+    val subList = sub.subList
+    assertThat(subList.size, is(1))
+    val hostkeyChunks = subList.head
+    assertThat(hostkeyChunks._1, is("0F0F0F0F"))
+    val chunks = hostkeyChunks._2
+    assertThat(chunks.size, is(128))
+    chunks foreach (chunk => {
+      assertThat(chunk._1, is(168496141))
+      assertThat(chunk._2, is("81"))
+    })
   }
 }

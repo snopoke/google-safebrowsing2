@@ -18,32 +18,46 @@ package net.google.safebrowsing2.parsers
 
 import util.Helpers._
 import scala.util.parsing.input.CharArrayReader.EofCh
+import collection.mutable.ListBuffer
 
 object DataParser extends BinaryParsers {
 
   case class AddChunk(chunknum: Int, hashlen: Int, data: Array[Byte]) {
-    lazy val hostkey = bytes2Hex(data.take(4))
-    lazy val count = if (data.length > 4) data(4).toInt else 0
-
     /**
+     * ADD-DATA = (HOSTKEY COUNT [PREFIX]*)+
+     * HOSTKEY  = <4 unsigned bytes>                            # 32-bit hash prefix
+     * COUNT    = <1 unsigned byte>
+     * PREFIX   = <HASHLEN unsigned bytes>
+     *
      * count = 0 -> no PREFIX (special case: PREFIX = HOSTKEY)
      * count = N -> N PREFIXes
      *
      * PREFIX length = hashlen
      */
-    lazy val prefixes: List[String] = if (count == 0) List(hostkey) else {
-      (0 until count toList) map { i =>
-        val start = 5 + (hashlen * i)
-        bytes2Hex(data.slice(start, start + hashlen).toArray)
+    lazy val addList: List[(String, List[String])] = {
+      val list = new ListBuffer[(String, List[String])]()
+
+      var i = 0
+      while(i < data.length) {
+        val hostkey = bytes2Hex(data.slice(i, i + 4).toArray)
+        val count = toInt(Array(data(i + 4)))
+        val prefixes: List[String] = if (count == 0) List("") else {
+          (0 until count toList) map { j =>
+            val start = (i + 5) + (hashlen * j)
+            bytes2Hex(data.slice(start, start + hashlen).toArray)
+          }
+        }        
+        list += ((hostkey, prefixes))
+        i += (5 + count * hashlen) // host key (4 bytes) + count (1 byte) + count * hashlen
       }
+
+      list.toList
     }
 
     override def equals(that: Any): Boolean = that match {
       case a: AddChunk => {
         a.chunknum == chunknum &&
-          a.count == count &&
           a.hashlen == hashlen &&
-          a.hostkey == hostkey &&
           a.data.deep.equals(data.deep)
       }
       case _ => false
@@ -55,34 +69,52 @@ object DataParser extends BinaryParsers {
   }
 
   case class SubChunk(chunknum: Int, hashlen: Int, data: Array[Byte]) {
-    lazy val hostkey = bytes2Hex(data.take(4))
-    lazy val count = if (data.length > 4) data(4).toInt else 0
-
     /**
+     * SUB-DATA    = (HOSTKEY COUNT (ADDCHUNKNUM | (ADDCHUNKNUM PREFIX)+))+
+     * HOSTKEY     = <4 unsigned bytes>                            # 32-bit hash prefix
+     * COUNT       = <1 unsigned byte>
+     * ADDCHUNKNUM = <4 byte unsigned integer in network byte order>
+     * PREFIX      = <HASHLEN unsigned bytes>
+     *
      * count = 0 -> only one ADDCHUNKNUM, PREFIX = HOSTKEY
      * count = N -> N (ADDCHUNKNUM, PREFIX) pairs
      *
      * ADDCHUNKNUM length = 4
      * PREFIX length = hashlen
      */
-    lazy val pairs: List[(Int, String)] = if (data.length < 9) Nil
-    else if (count == 0) List((toInt(data.slice(5, 9)), hostkey))
-    else {
-      (0 until count toList) map { i =>
-        val start = 5 + ((hashlen + 4) * i)
-        val prefixStart = start + 4
-        val addchunknum = toInt(data.slice(start, prefixStart))
-        val prefix = bytes2Hex(data.slice(prefixStart, prefixStart + hashlen))
-        (addchunknum, prefix)
+    lazy val subList: List[(String, List[(Int, String)])] = {
+      val list = new ListBuffer[(String, List[(Int, String)])]()
+
+      var i = 0
+      while(i < data.length) {
+        val hostkey = bytes2Hex(data.slice(i, i + 4).toArray)
+        val count = toInt(Array(data(i + 4)))
+        val pairs: List[(Int, String)] = if (count == 0) List((toInt(data.slice((i + 5), (i + 9))), ""))
+        else {
+          (0 until count toList) map { j =>
+            val start = (i + 5) + ((hashlen + 4) * j)
+            val prefixStart = start + 4
+            val addchunknum = toInt(data.slice(start, prefixStart))
+            val prefix = bytes2Hex(data.slice(prefixStart, prefixStart + hashlen))
+            (addchunknum, prefix)
+          }
+        }
+
+        list += ((hostkey, pairs))
+        if (count == 0) {
+          i += (5 + 4)
+        } else {
+          i += (5 + count * (4 + hashlen))
+        }
       }
+
+      list.toList
     }
 
     override def equals(that: Any): Boolean = that match {
       case s: SubChunk => {
         s.chunknum == chunknum &&
-          s.count == count &&
           s.hashlen == hashlen &&
-          s.hostkey == hostkey &&
           s.data.deep.equals(data.deep)
       }
       case _ => false

@@ -28,7 +28,7 @@ object RFDResponseParser extends RegexParsers {
   override def skipWhitespace = false
 
   case class Resp(rekey: Boolean, mac: Option[String], next: Int, reset: Boolean, list: Option[List[ChunkList]])
-  case class ChunkList(name: String, data: List[ListData])
+  case class ChunkList(name: String, data: Option[List[ListData]])
   abstract trait ListData
   case class Redirect(url: String, mac: Option[String]) extends ListData
   case class AdDel(list: List[Int]) extends ListData
@@ -48,7 +48,7 @@ object RFDResponseParser extends RegexParsers {
   def mac = "m:"~>".+".r 
   def next = "n:" ~> number <~ space ^^ { _.toInt }
   def reset = "r:pleasereset" <~ space ^^ { r => true }
-  def list = "i:" ~> listname ~ (listdata+) ^^ {
+  def list = "i:" ~> listname ~ opt(listdata+) ^^ {
     case name ~ data => ChunkList(name, data)
   }
   def number = """[0-9]*""".r
