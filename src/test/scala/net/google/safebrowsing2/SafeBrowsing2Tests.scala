@@ -262,8 +262,8 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
   @Test
   def testRequestFullHash = {
-    val expressions = Seq(Expression("host1","path1"),
-      Expression("host2","path2"))
+    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname"),
+      Chunk(123, "11221133", "hostkey", "listname"))
     val data = "list1:123:64\n" +
       byteString(64)
     when(storage.getFullHashError(anyM(classOf[String]))).thenReturn(None)
@@ -272,7 +272,32 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     when(response.statusCode(false)).thenReturn(200)
     when(response.asBytes()).thenReturn(data.getBytes())
 
-    val hashes = sb2.requestFullHashes(expressions, false)
+    val hashes = sb2.requestFullHashes(chunks, false)
+    assertThat(hashes.size, is(2))
+    assertThat(hashes(0).hash, is(hexString(32)))
+    assertThat(hashes(1).hash, is(hexString(32, 64)))
+  }
+
+  @Test
+  def testRequestFullHash_differentSizes = {
+    val chunks = Seq(Chunk(123, "00112233", "hostkey", "listname"),
+      Chunk(123, "112211334455", "hostkey", "listname"))
+
+    when(storage.getFullHashError(anyM(classOf[String]))).thenReturn(None)
+    val response = mock[Response]
+    when(sb2.httpClient.POST(anyM(classOf[String]), anyM(classOf[Array[Byte]]), anyM(classOf[Map[String, String]]))).thenReturn(response)
+    when(response.statusCode(false)).thenReturn(200)
+
+    var callNum = 0
+    when(response.asBytes()).thenAnswer(new Answer[Array[Byte]] {
+      def answer(invocation: InvocationOnMock) = {
+        val data = "list1:123:32\n".getBytes() ++ bytes(callNum, callNum + 32)
+        callNum += 32
+        data
+      }
+    })
+
+    val hashes = sb2.requestFullHashes(chunks, false)
     assertThat(hashes.size, is(2))
     assertThat(hashes(0).hash, is(hexString(32)))
     assertThat(hashes(1).hash, is(hexString(32, 64)))

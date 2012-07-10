@@ -369,8 +369,8 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-  override def clearFullhashErrors(expressions: Seq[Expression]) = {
-    val params = expressions.map(e => Seq(e.hexHash))
+  override def clearFullhashErrors(chunks: Seq[Chunk]) = {
+    val params = chunks.map(c => Seq(c.prefix))
     executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashErrors WHERE sPrefix = ?", params)
   }
 
