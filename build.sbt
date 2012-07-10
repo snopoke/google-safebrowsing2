@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-log4j12" % "1.6.4" % "provided",
   "log4j" % "log4j" % "1.2.16" % "provided",
   "joda-time" % "joda-time" % "1.6.2",
-  //"com.github.tototoshi" %% "scala-http-client" % "1.0",
+  "com.github.tototoshi" %% "scala-http-client" % "1.0",
   "junit" % "junit" % "4.10" % "test",
   "org.mockito" % "mockito-core" % "1.9.0" % "test",
   "org.scalatest" %% "scalatest" % "1.7.1" % "test",
