@@ -275,7 +275,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-  override def getChunksForHostKeys(hostkeys: Set[String]): Seq[Chunk] = {
+  override def getChunksForHostKeys(hostkeys: Seq[String]): Seq[Chunk] = {
     // TODO: This looks ugly...
     val flattedKeys = hostkeys.map(k => "'" + k + "'").reduceLeft((x,y) => x + ", " + y)
 
