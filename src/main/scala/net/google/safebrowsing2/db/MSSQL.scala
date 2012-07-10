@@ -32,11 +32,11 @@ class MSSQL(jt: JdbcTemplate, tablePrefix: String) extends DBI(jt, tablePrefix) 
     logger.debug("Creating table: "+TABLE_PREFIX+"Updates")
     val schema = """	
 		CREATE TABLE """+TABLE_PREFIX+"""Updates (
+		    sList VARCHAR( 50 ) NOT NULL PRIMARY KEY,
 			dtLastSuccess DATETIME,
 			dtLastAttempt DATETIME NOT NULL,
 			dtNextAttempt DATETIME NOT NULL,
-			iErrorCount INT NOT NULL,
-			sList VARCHAR( 50 ) NOT NULL
+			iErrorCount INT NOT NULL
 		)
 	"""
 
@@ -159,5 +159,11 @@ class MSSQL(jt: JdbcTemplate, tablePrefix: String) extends DBI(jt, tablePrefix) 
 	"""
 
     execute(schema)
+  }
+  
+  override def getMacKey(): Option[MacKey] = {
+    query("SELECT TOP 1 sClientKey, sWrappedKey FROM "+TABLE_PREFIX+"MacKeys").option(row =>
+      MacKey(row.getString("sClientKey"), row.getString("sWrappedKey"))
+    )
   }
 }
