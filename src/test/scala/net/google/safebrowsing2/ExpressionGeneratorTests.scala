@@ -27,30 +27,30 @@ import org.mockito.Mockito
 import org.mockito.Matchers
 import com.github.tototoshi.http.Response
 import org.apache.http.HttpResponse
-import util.Helpers._
 import net.google.safebrowsing2.db.DBI
 import java.net.URL
+import util.Helpers._
 
 class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
 
   val eb = new ExpressionGenerator("http://www.google.com")
 
   @Test
-  def testMakeHostKey = {
-    val domain = eb.makeHostKey("www.google.com")
-    assertThat(domain, is("www.google.com/"))
+  def testMakeHostKeys = {
+    val domain = eb.makeHostKeys("www.google.com")
+    assertThat(domain, is(Set(bytes2Hex(sha256("www.google.com/").take(4)), bytes2Hex(sha256("google.com/").take(4)))))
   }
 
   @Test
-  def testMakeHostKey_short = {
-    val domain = eb.makeHostKey("google.com")
-    assertThat(domain, is("google.com/"))
+  def testMakeHostKesy_short = {
+    val domain = eb.makeHostKeys("google.com")
+    assertThat(domain, is(Set(bytes2Hex(sha256("google.com/").take(4)))))
   }
 
   @Test
-  def testMakeHostKey_long = {
-    val domain = eb.makeHostKey("malware.testing.google.test")
-    assertThat(domain, is("testing.google.test/"))
+  def testMakeHostKeys_long = {
+    val domain = eb.makeHostKeys("malware.testing.google.test")
+    assertThat(domain, is(Set(bytes2Hex(sha256("testing.google.test/").take(4)), bytes2Hex(sha256("google.test/").take(4)))))
   }
 
   @Test

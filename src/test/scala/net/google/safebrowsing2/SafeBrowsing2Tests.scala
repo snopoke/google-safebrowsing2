@@ -207,22 +207,57 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   def testLocalLookupSuffix_noMatch = {
     val e = Expression("www.test.com", "/1.html")
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"))
-    when(storage.getChunksForHostKey("hostkey")).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix("hostkey", Seq(e))
+    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
     assertTrue(chunks.isEmpty)
   }
 
   @Test
   def testLocalLookupSuffix_match = {
     val e = Expression("www.test.com", "/1.html")
+
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"),
       Chunk(234, e.hexHash.take(4), "hostkey", "listname"))
-    when(storage.getChunksForHostKey("suffix")).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
+    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
     assertThat(chunks.size, is(1))
     assertThat(chunks(0).chunknum, is(234))
+  }
+
+  @Test
+  def testLocalLookupSuffix_matchEmptyPrefix = {
+    val e = Expression("www.test.com", "/1.html")
+
+    val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"),
+      Chunk(234, "", "hostkey", "listname"))
+    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
+
+    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
+    assertThat(chunks.size, is(1))
+    assertThat(chunks(0).chunknum, is(234))
+  }
+
+  @Test
+  def testLocalLookupSuffix_matchMultipleHostKeys = {
+    val e1 = Expression("www.test.com", "/1.html") // "hostkey1"
+    val e2 = Expression("test.com", "/") // "hostkey2"
+
+    val addChunks = Seq(Chunk(1, "nonmatchingprefix", "hostkey1", "listname"),
+      Chunk(2, e2.hexHash.take(4), "hostkey1", "listname"),
+      Chunk(3, e1.hexHash.take(4), "hostkey1", "listname"),
+      Chunk(4, "nonmatchingprefix", "hostkey2", "listname"),
+      Chunk(5, e1.hexHash.take(4), "hostkey2", "listname"),
+      Chunk(6, e2.hexHash.take(4), "hostkey2", "listname"))
+    when(storage.getChunksForHostKeys(Set("hostkey1", "hostkey2"))).thenReturn(addChunks)
+
+    val chunks = sb2.local_lookup_suffix(Set("hostkey1", "hostkey2"), Seq(e1, e2))
+    assertThat(chunks.size, is(4))
+    assertThat(chunks(0).chunknum, is(2))
+    assertThat(chunks(1).chunknum, is(3))
+    assertThat(chunks(2).chunknum, is(5))
+    assertThat(chunks(3).chunknum, is(6))
   }
 
   @Test

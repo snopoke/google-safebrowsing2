@@ -44,12 +44,12 @@ abstract trait Storage {
   def addChunks_a(chunknum: Int, hostkeyPrefixes: Seq[(String, Seq[String])], list: String)
 
   /**
-   * Get all add chunks for the given host key that have not been
+   * Get all add chunks for the given host keys that have not been
    * removed by sub chunks
-   * @param hostkey
+   * @param hostkeys
    * @return list of chunks
    */
-  def getChunksForHostKey(hostkey: String): Seq[Chunk]
+  def getChunksForHostKeys(hostkeys: Set[String]): Seq[Chunk]
 
   /**
    * Get all add chunk identifying numbers for the given list

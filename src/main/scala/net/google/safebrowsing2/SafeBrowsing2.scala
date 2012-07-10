@@ -230,27 +230,26 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     val generator = new ExpressionGenerator(url)
     val expressions = generator.expressions
-    val hostKey = generator.hostKey
-    lookup_hostKey(candidates, expressions, hostKey, withMac)
+    val hostKeys = generator.hostKeys
+    lookup_hostKey(candidates, expressions, hostKeys, withMac)
   }
 
   @throws(classOf[ApiException])
-  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
+  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKeys: Set[String], withMac: Boolean): Option[String] = {
 
     // Local lookup
-    val add_chunks = local_lookup_suffix(hostKey, expressions)
+    val add_chunks = local_lookup_suffix(hostKeys, expressions)
     if (add_chunks.isEmpty) {
       logger.debug("No hit in local lookup")
       return None
     }
 
     // Check against full hashes
-    val hashesInStore = new ListBuffer[String]()
     add_chunks foreach (achunk => {
       if (lists.contains(achunk.list)) {
+        // TODO: This should be optimized because each chunk can host multiple hosts
         val hashes = storage.getFullHashes(achunk.chunknum, new DateTime().minus(Period.minutes(45)), achunk.list)
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
-        hashesInStore ++= hashes
 
         expressions foreach (e => {
           if (hashes.find(_.equals(e.hexHash)).isDefined) {
@@ -404,9 +403,9 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  protected[safebrowsing2] def local_lookup_suffix(host_key: String, expressions: Seq[Expression]): Seq[Chunk] = {
+  protected[safebrowsing2] def local_lookup_suffix(host_keys: Set[String], expressions: Seq[Expression]): Seq[Chunk] = {
 
-    var chunks = storage.getChunksForHostKey(host_key)
+    var chunks = storage.getChunksForHostKeys(host_keys)
     if (chunks.isEmpty) {
       logger.debug("No un-subbed host key");
       return Nil
