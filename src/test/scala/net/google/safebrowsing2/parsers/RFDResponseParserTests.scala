@@ -40,8 +40,8 @@ class RFDResponseParserTests {
     assertTrue(parsed.isDefined)
 
     val adl = List(1,2,3,4,5)
-    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", Option("mac1")), Redirect("http://redir2", None), AdDel(adl)))
-    val cl2 = ChunkList("google-list-456", List(SubDel(List(5,6,7,8,9,12,13,14,15,16))))
+    val cl1 = ChunkList("google-list-123", Option(List(Redirect("http://redir1", Option("mac1")), Redirect("http://redir2", None), AdDel(adl))))
+    val cl2 = ChunkList("google-list-456", Option(List(SubDel(List(5,6,7,8,9,12,13,14,15,16)))))
     val clist = List(cl1, cl2)
     assertThat(parsed.get, is(Resp(false, Some("lAcpo_sFRJ4lOC-zqLgR_uqGtsU="), 123, false, Some(clist))))
   }
@@ -61,7 +61,7 @@ class RFDResponseParserTests {
     assertTrue("parsing failed", parsed.isDefined)
 
     val adl = List(1,2,3,4,5)
-    val cl1 = ChunkList("google-list-123", List(Redirect("http://redir1", None), AdDel(adl)))
+    val cl1 = ChunkList("google-list-123", Option(List(Redirect("http://redir1", None), AdDel(adl))))
     assertThat(parsed.get, is(Resp(false, None, 123, false, Some(cl1 :: Nil))))
   }
 
@@ -91,5 +91,21 @@ class RFDResponseParserTests {
 
     assertTrue("parsing failed", parsed.isDefined)
     assertThat(parsed.get, is(Resp(false, None, 123, true, None)))
+  }
+
+  @Test
+  def testNoUpdate = {
+    val response = "n:123\n" +
+    		"i:google-list-123\n";
+
+    val parsed = RFDResponseParser.parse(response) match {
+      case RFDResponseParser.Success(c, _) => Option(c)
+      case x => println(x); None
+    }
+
+    assertTrue("parsing failed", parsed.isDefined)
+
+    val cl1 = ChunkList("google-list-123", None)
+    assertThat(parsed.get, is(Resp(false, None, 123, false, Some(cl1 :: Nil))))
   }
 }

@@ -25,13 +25,10 @@ import org.joda.time.Duration
 import org.joda.time.Period
 
 import javax.sql.DataSource
-import net.google.safebrowsing2.Chunk
-import net.google.safebrowsing2.Hash
-import net.google.safebrowsing2.MacKey
-import net.google.safebrowsing2.Status
 import util.JdbcTemplate
 import util.LiteDataSource
 import util.Logging
+import net.google.safebrowsing2._
 
 /**
  * Base Storage class used to access the database.
@@ -236,37 +233,43 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     execute(schema)
   }
    
-  override def addChunks_s(chunknum: Int, hostkey: String, chunks: Seq[(Int, String)], list: String) = {
-    logger.trace("Inserting subChunk: [chunknum={}, hostkey={}, chunks={}, list={}",
-      Array[Object](chunknum: java.lang.Integer, hostkey, chunks, list))
+  override def addChunks_s(chunknum: Int, hostkeyChunks: Seq[(String,  Seq[(Int, String)])], list: String) = {
+    logger.trace("Inserting subChunk: [chunknum={}, hostkeyChunks={}, list={}",
+      Array[Object](chunknum: java.lang.Integer, hostkeyChunks, list))
 
     val delQuery = "DELETE FROM "+TABLE_PREFIX+"SubChunks WHERE sHostkey = ? AND sPrefix = ? AND iSubChunkNum = ? AND iAddChunkNum = ? AND sList = ?"
     val addQuery = "INSERT INTO "+TABLE_PREFIX+"SubChunks (sHostkey, sPrefix, iSubChunkNum, iAddChunkNum, sList) VALUES (?, ?, ?, ?, ?)"
 
-    chunks foreach (tuple => {
-      execute(delQuery, hostkey, tuple._2, chunknum, tuple._1, list)
-      execute(addQuery, hostkey, tuple._2, chunknum, tuple._1, list)
+    hostkeyChunks foreach (hostkeyChunksTuple => {
+      val hostkey = hostkeyChunksTuple._1
+      hostkeyChunksTuple._2 foreach (chunkTuple => {
+        execute(delQuery, hostkey, chunkTuple._2, chunknum, chunkTuple._1, list)
+        execute(addQuery, hostkey, chunkTuple._2, chunknum, chunkTuple._1, list)
+      })
     })
 
-    if (chunks.isEmpty) { // keep empty chunks
+    if (hostkeyChunks.isEmpty) { // keep empty chunks
       execute(delQuery, "", "", chunknum, 0, list)
       execute(addQuery, "", "", chunknum, 0, list)
     }
   }
 
-  override def addChunks_a(chunknum: Int, hostkey: String, prefixes: Seq[String], list: String) = {
-    logger.trace("Inserting addChunk: [chunknum={}, hostkey={}, prefixes={}, list={}",
-      Array[Object](chunknum: java.lang.Integer, hostkey, prefixes, list))
+  override def addChunks_a(chunknum: Int, hostkeyPrefixes: Seq[(String, Seq[String])], list: String) = {
+    logger.trace("Inserting addChunk: [chunknum={}, hostkeyPrefixes={}, list={}",
+      Array[Object](chunknum: java.lang.Integer, hostkeyPrefixes, list))
 
     val delQuery = "DELETE FROM "+TABLE_PREFIX+"AddChunks WHERE sHostkey = ? AND  sPrefix  = ? AND iAddChunkNum = ? AND sList  = ?"
     val addQuery = "INSERT INTO "+TABLE_PREFIX+"AddChunks (sHostkey, sPrefix, iAddChunkNum, sList) VALUES (?, ?, ?, ?)"
 
-    prefixes foreach (prefix => {
-      execute(delQuery, hostkey, prefix, chunknum, list)
-      execute(addQuery, hostkey, prefix, chunknum, list)
+    hostkeyPrefixes foreach (hostkeyPrefixesTurple => {
+      val hostkey = hostkeyPrefixesTurple._1
+      hostkeyPrefixesTurple._2 foreach  (prefix => {
+        execute(delQuery, hostkey, prefix, chunknum, list)
+        execute(addQuery, hostkey, prefix, chunknum, list)
+      })
     })
 
-    if (prefixes.isEmpty) { // keep empty chunks
+    if (hostkeyPrefixes.isEmpty) { // keep empty chunks
       execute(delQuery, "", "", chunknum, list)
       execute(addQuery, "", "", chunknum, list)
     }
@@ -363,8 +366,8 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-  override def clearFullhashErrors(chunks: Seq[Chunk]) = {
-    val params = chunks.map(c => Seq(c.prefix))
+  override def clearFullhashErrors(expressions: Seq[Expression]) = {
+    val params = expressions.map(e => Seq(e.hexHash))
     executeBatch("DELETE FROM "+TABLE_PREFIX+"FullHashErrors WHERE sPrefix = ?", params)
   }
 
