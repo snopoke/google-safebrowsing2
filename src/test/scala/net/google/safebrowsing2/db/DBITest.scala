@@ -294,13 +294,11 @@ class DBITest {
 
   @Test
   def testClearFullHashErrors = {
-    val expression = Expression("host","path")
-
     val now = new DateTime().withMillisOfSecond(0)
-    dbi.fullHashError(now, expression.hexHash)
+    dbi.fullHashError(now, "hash1")
 
-    dbi.clearFullhashErrors(Seq(expression))
-    val status = dbi.getFullHashError(expression.hexHash)
+    dbi.clearFullhashErrors(Seq(Chunk(123, "hash1", "hostkey", "list1")))
+    val status = dbi.getFullHashError("hash1")
     assertTrue(status.isEmpty)
   }
 

@@ -245,10 +245,17 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     }
 
     // Check against full hashes
+    val hashesInStore = new ListBuffer[String]()
     add_chunks foreach (achunk => {
       if (lists.contains(achunk.list)) {
+        if (achunk.prefix.isEmpty) {
+          logger.debug("Chunk without prefix is found")
+          return Some(achunk.list)
+        }
+
         val hashes = storage.getFullHashes(achunk.chunknum, new DateTime().minus(Period.minutes(45)), achunk.list)
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
+        hashesInStore ++= hashes
 
         expressions foreach (e => {
           if (hashes.find(_.equals(e.hexHash)).isDefined) {
@@ -259,10 +266,10 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       }
     })
 
-    // filter out hashes that we already have truncated value
-    val requestExpressions: Seq[Expression] = expressions.filter(expression => add_chunks.find(chunk => expression.hexHash.startsWith(chunk.prefix)).isDefined)
+    // filter out chunks that we already have full hashes for
+    val requestChunks = add_chunks.filter(chunk => hashesInStore.find(hash => hash.startsWith(chunk.prefix)).isEmpty)
     //ask for new hashes
-    val hashes = requestFullHashes(requestExpressions, withMac)
+    val hashes = requestFullHashes(requestChunks, withMac)
     storage.addFullHashes(new DateTime(), hashes)
 
     expressions foreach (e => {
@@ -280,7 +287,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
    *  Request full full hashes for specific prefixes from Google.
    */
   @throws(classOf[ApiException])
-  protected[safebrowsing2] def requestFullHashes(requestExpressions: Seq[Expression], withMac: Boolean): Seq[Hash] = {
+  protected[safebrowsing2] def requestFullHashes(chunks: Seq[Chunk], withMac: Boolean): Seq[Hash] = {
 
     var macKey: Option[MacKey] = None
     if (withMac) {
@@ -288,20 +295,20 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       if (macKey.isEmpty) throw new MacException("Unable to get MacKey")
     }
 
-    val errorsToClear = mutable.ArrayBuffer[Expression]()
-    val toFetch = requestExpressions filter (e => {
-      val status = storage.getFullHashError(e.hexHash)
+    val errorsToClear = mutable.ArrayBuffer[Chunk]()
+    val toFetch = chunks filter (c => {
+      val status = storage.getFullHashError(c.prefix)
       val fetch = status match {
         case None => true
         case Some(status) => {
           // if last error was more than 8 hours ago exit back off mode
           if (status.lastAttempt.isBefore(new DateTime().minusHours(8)))
-            errorsToClear += e
+            errorsToClear += c
           status.nextAttempt.isBeforeNow()
         }
       }
       if (!fetch) {
-        logger.debug("Delaying fetch of full hash for expression: {} / {}", e, status)
+        logger.debug("Delaying fetch of full hash for chunk: {} / {}", c, status)
       }
       fetch
     })
@@ -315,9 +322,9 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       return Nil
     }
 
-    val sizeMap = mutable.Map[Int, ListBuffer[Expression]]()
-    toFetch.foreach(e => {
-      sizeMap.getOrElseUpdate(e.hexHash.length, ListBuffer[Expression]()) += e
+    val sizeMap = mutable.Map[Int, ListBuffer[Chunk]]()
+    toFetch.foreach(c => {
+      sizeMap.getOrElseUpdate(c.prefix.length, ListBuffer[Chunk]()) += c
     })
 
     var hashes = mutable.ListBuffer[Hash]()
@@ -329,18 +336,18 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   @throws(classOf[ApiException])
-  private def requestFullHashes(expressions: List[Expression], hashLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
-    if (expressions.isEmpty) return Nil
+  private def requestFullHashes(prefixes: List[Chunk], prefixLength: Int, macKey: Option[MacKey]): Seq[Hash] = {
+    if (prefixes.isEmpty) return Nil
 
-    expressions foreach (e => {
-      if (e.hexHash.length != hashLength) {
-        throw new ApiException("All hashes must have length " + hashLength)
+    prefixes foreach (p => {
+      if (p.prefix.length != prefixLength) {
+        throw new ApiException("All prefixes must have length " + prefixLength)
       }
     })
 
-    val hashSize = hashLength / 2 // Each char is in hex (16 bit) -> byteSize = hashLength * 16bit / 8bit
-    val header = (hashSize + ":" + hashSize * expressions.size + "\n").getBytes()
-    val body = header ++ expressions.map(e => hex2Bytes(e.hexHash)).reduce(_ ++ _)
+    val prefixSize = prefixLength / 2 // Each char is in hex (16 bit) -> byteSize = prefixLength * 16bit / 8bit
+    val header = (prefixSize + ":" + prefixSize * prefixes.size + "\n").getBytes()
+    val body = header ++ prefixes.map(p => hex2Bytes(p.prefix)).reduce(_ ++ _)
     logger.trace("Full hash request body:\n{}", new String(body))
 
     var url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
@@ -354,20 +361,20 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
         res.consume
         val msg = "Full hash request failed: " + other
         logger.error(msg)
-        expressions foreach (e => {
-          storage.fullHashError(new DateTime(), e.hexHash)
+        prefixes foreach (c => {
+          storage.fullHashError(new DateTime(), c.prefix)
         })
         throw new ApiException(msg)
       }
     }
 
     try {
-      storage.clearFullhashErrors(expressions)
+      storage.clearFullhashErrors(prefixes)
       parseFullHashes(res.asBytes(), macKey)
     } catch {
       case e: RekeyException => {
         storage.deleteMacKeys
-        requestFullHashes(expressions, hashLength, macKey)
+        requestFullHashes(prefixes, prefixLength, macKey)
       }
       case other => throw other
     }

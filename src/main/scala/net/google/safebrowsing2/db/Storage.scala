@@ -141,7 +141,7 @@ abstract trait Storage {
    * given list of chunks
    * @param chunks the list of chunks to clear errors for
    */
-  def clearFullhashErrors(expressions: Seq[Expression])
+  def clearFullhashErrors(chunks: Seq[Chunk])
 
   /**
    * Get the error status for the given prefix
