@@ -247,7 +247,6 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     // Check against full hashes
     add_chunks foreach (achunk => {
       if (lists.contains(achunk.list)) {
-        // TODO: This should be optimized because each chunk can host multiple hosts
         val hashes = storage.getFullHashes(achunk.chunknum, new DateTime().minus(Period.minutes(45)), achunk.list)
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
 
