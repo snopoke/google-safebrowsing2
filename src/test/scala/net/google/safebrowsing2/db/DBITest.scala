@@ -86,15 +86,59 @@ class DBITest {
   }
 
   @Test
-  def testGetChunksForHostKey = {
+  def testGetChunksForHostKeysSingleKey = {
     dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list1")
     dbi.addChunks_a(2, Seq(("hostkey", Seq("p3", "p4"))), "list1")
     dbi.addChunks_s(3, Seq(("hostkey", Seq((1, "p1"), (2, "p3")))), "list1")
 
-    val chunks = dbi.getChunksForHostKey("hostkey")
+    val chunks = dbi.getChunksForHostKeys(Set("hostkey"))
     assertThat(chunks.length, is(2))
     assertThat(chunks(0), is(Chunk(1, "p2", "hostkey", "list1")))
     assertThat(chunks(1), is(Chunk(2, "p4", "hostkey", "list1")))
+  }
+
+  @Test
+  def testGetChunksForHostKeysSingleKeyWithEmptySubPrefix = {
+    dbi.addChunks_a(1, Seq(("hostkey", Seq("p1", "p2"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey", Seq("p3", "p4"))), "list1")
+    dbi.addChunks_a(3, Seq(("hostkey", Seq("p5", "p6"))), "list1")
+    dbi.addChunks_s(4, Seq(("hostkey", Seq((1, "p1"), (2, "p3")))), "list1")
+    dbi.addChunks_s(4, Seq(("hostkey", Seq((3, "")))), "list1")
+
+    val chunks = dbi.getChunksForHostKeys(Set("hostkey"))
+    assertThat(chunks.length, is(2))
+    assertThat(chunks(0), is(Chunk(1, "p2", "hostkey", "list1")))
+    assertThat(chunks(1), is(Chunk(2, "p4", "hostkey", "list1")))
+  }
+
+  @Test
+  def testGetChunksForHostKeysMultipleKeys = {
+    dbi.addChunks_a(1, Seq(("hostkey1", Seq("p1", "p2"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey1", Seq("p3", "p4"))), "list1")
+    dbi.addChunks_s(3, Seq(("hostkey1", Seq((1, "p1"), (2, "p3")))), "list1")
+
+    dbi.addChunks_a(4, Seq(("hostkey2", Seq("p5", "p6"))), "list1")
+    dbi.addChunks_a(5, Seq(("hostkey2", Seq("p7", "p8"))), "list1")
+    dbi.addChunks_s(6, Seq(("hostkey2", Seq((4, ""), (5, "p8")))), "list1")
+
+    val chunks = dbi.getChunksForHostKeys(Set("hostkey1", "hostkey2", "hostkey3"))
+    assertThat(chunks.length, is(3))
+    assertThat(chunks(0), is(Chunk(1, "p2", "hostkey1", "list1")))
+    assertThat(chunks(1), is(Chunk(2, "p4", "hostkey1", "list1")))
+    assertThat(chunks(2), is(Chunk(5, "p7", "hostkey2", "list1")))
+  }
+
+  @Test
+  def testGetChunksForHostKeysMultipleKeysInOneChunk = {
+    dbi.addChunks_a(1, Seq(("hostkey1", Seq("p1", "p2")), ("hostkey2", Seq("p5", "p6"))), "list1")
+    dbi.addChunks_a(2, Seq(("hostkey1", Seq("p3", "p4")), ("hostkey2", Seq("p7", "p8"))), "list1")
+    dbi.addChunks_s(3, Seq(("hostkey1", Seq((1, "p1"), (2, "p3"))), ("hostkey2", Seq((1, ""), (2, "p8")))), "list1")
+
+    val chunks = dbi.getChunksForHostKeys(Set("hostkey1", "hostkey2", "hostkey3"))
+    assertThat(chunks.length, is(3))
+    assertThat(chunks(0), is(Chunk(1, "p2", "hostkey1", "list1")))
+    assertThat(chunks(1), is(Chunk(2, "p4", "hostkey1", "list1")))
+    assertThat(chunks(2), is(Chunk(2, "p7", "hostkey2", "list1")))
   }
 
   @Test

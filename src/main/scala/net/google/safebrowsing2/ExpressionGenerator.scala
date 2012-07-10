@@ -47,10 +47,10 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
   // A list of paths used to build expressions.
   val path_exprs = makePathList(url)
 
-  lazy val hostKey = bytes2Hex(sha256(makeHostKey(canonical_host)).take(4))
-  
-  def getHostKey = {
-    hostKey
+  lazy val hostKeys = makeHostKeys(canonical_host)
+
+  def getHostKeys = {
+    hostKeys
   }
 
   def expressions: Seq[Expression] = {
@@ -135,20 +135,29 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
    * or two host components if a third does not exist and
    * append a trailing slash (/) to this string.
    *
+   * "To be clear, to match a URL against a host key, a client must try matching based upon the two most significant host components,
+   *  and also the three most significant host components if three such components exist."
+   *
    * @param host the canonicalized host
    * @return host key
    */
-  protected[safebrowsing2] def makeHostKey(host: String): String = {
+  protected[safebrowsing2] def makeHostKeys(host: String): Set[String] = {
 
     if (host.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
-      return host
+      return Set(makeHostKey(host))
     }
 
     val parts = host.split("""\.""")
-    val hostKey = parts.takeRight(3).mkString(".")
-    logger.debug("HostKey: {} -> {}", host, hostKey)
-    hostKey + "/" // Don't forget trailing slash
+    val three_most_significant_hostKey = makeHostKey(parts.takeRight(3).mkString(".") + "/")
+    val two_most_significant_hostKey = makeHostKey(parts.takeRight(2).mkString(".") + "/")
+    val hostKeys = Set(three_most_significant_hostKey, two_most_significant_hostKey)
+    logger.debug("HostKeys: {} -> {}", host, hostKeys)
+    hostKeys
+  }
+
+  private def makeHostKey(host: String): String = {
+    bytes2Hex(sha256(host).take(4))
   }
 }
 

@@ -275,15 +275,18 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-   override def getChunksForHostKey(hostkey: String): Seq[Chunk] = {
-    query("""SELECT a.sList, a.iAddChunkNum, a.sPrefix from """+TABLE_PREFIX+"""AddChunks a LEFT OUTER JOIN """+TABLE_PREFIX+"""SubChunks s 
+  override def getChunksForHostKeys(hostkeys: Set[String]): Seq[Chunk] = {
+    // TODO: This looks ugly...
+    val flattedKeys = hostkeys.map(k => "'" + k + "'").reduceLeft((x,y) => x + ", " + y)
+
+    query("""SELECT a.sList, a.iAddChunkNum, a.sHostkey, a.sPrefix from """+TABLE_PREFIX+"""AddChunks a LEFT OUTER JOIN """+TABLE_PREFIX+"""SubChunks s
     		ON s.sList = a.sList
     		AND s.sHostkey = a.sHostkey
     		AND s.iAddChunkNum = a.iAddChunkNum
-    		AND s.sPrefix = a.sPrefix
+    		AND (s.sPrefix = a.sPrefix OR s.sPrefix = '')
     		WHERE s.iSubChunkNum IS NULL
-    		AND a.sHostkey = ?""", hostkey).seq(row =>
-      Chunk(row.getInt("iAddChunkNum"), row.getString("sPrefix"), hostkey, row.getString("sList")))
+    		AND a.sHostkey IN ("""+flattedKeys+""")""").seq(row =>
+      Chunk(row.getInt("iAddChunkNum"), row.getString("sPrefix"), row.getString("sHostkey"), row.getString("sList")))
   }
 
   override def getAddChunksNums(list: String): Seq[Int] = {
