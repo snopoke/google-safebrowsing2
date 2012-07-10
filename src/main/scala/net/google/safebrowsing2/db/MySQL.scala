@@ -78,4 +78,11 @@ class MySQL(jt: JdbcTemplate, tablePrefix: String) extends DBI(jt, tablePrefix) 
       execute(addQuery, "", "", chunknum, list)
     }
   }
+
+  override def addFullHashes(fetchTime: DateTime, fullHashes: Seq[Hash]) = {
+    logger.trace("Add full hashes: {}", fullHashes)
+
+    val insertParams = fullHashes map (hash => Seq(hash.chunknum, hash.hash, hash.list, fetchTime, fetchTime))
+    executeBatch("INSERT INTO "+TABLE_PREFIX+"FullHashes (iAddChunkNum, sHash, sList, dtLastUpdate) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE dtLastUpdate = ?", insertParams)
+  }
 }
