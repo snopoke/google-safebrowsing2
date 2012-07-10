@@ -49,7 +49,7 @@ abstract trait Storage {
    * @param hostkeys
    * @return list of chunks
    */
-  def getChunksForHostKeys(hostkeys: Set[String]): Seq[Chunk]
+  def getChunksForHostKeys(hostkeys: Seq[String]): Seq[Chunk]
 
   /**
    * Get all add chunk identifying numbers for the given list

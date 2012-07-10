@@ -235,7 +235,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   }
 
   @throws(classOf[ApiException])
-  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKeys: Set[String], withMac: Boolean): Option[String] = {
+  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKeys: Seq[String], withMac: Boolean): Option[String] = {
 
     // Local lookup
     val add_chunks = local_lookup_suffix(hostKeys, expressions)
@@ -409,7 +409,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  protected[safebrowsing2] def local_lookup_suffix(host_keys: Set[String], expressions: Seq[Expression]): Seq[Chunk] = {
+  protected[safebrowsing2] def local_lookup_suffix(host_keys: Seq[String], expressions: Seq[Expression]): Seq[Chunk] = {
 
     var chunks = storage.getChunksForHostKeys(host_keys)
     if (chunks.isEmpty) {

@@ -207,9 +207,9 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
   def testLocalLookupSuffix_noMatch = {
     val e = Expression("www.test.com", "/1.html")
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"))
-    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Seq("hostkey"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey"), Seq(e))
     assertTrue(chunks.isEmpty)
   }
 
@@ -219,9 +219,9 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"),
       Chunk(234, e.hexHash.take(4), "hostkey", "listname"))
-    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Seq("hostkey"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey"), Seq(e))
     assertThat(chunks.size, is(1))
     assertThat(chunks(0).chunknum, is(234))
   }
@@ -232,9 +232,9 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
 
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"),
       Chunk(234, "", "hostkey", "listname"))
-    when(storage.getChunksForHostKeys(Set("hostkey"))).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Seq("hostkey"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix(Set("hostkey"), Seq(e))
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey"), Seq(e))
     assertThat(chunks.size, is(1))
     assertThat(chunks(0).chunknum, is(234))
   }
@@ -250,9 +250,9 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
       Chunk(4, "nonmatchingprefix", "hostkey2", "listname"),
       Chunk(5, e1.hexHash.take(4), "hostkey2", "listname"),
       Chunk(6, e2.hexHash.take(4), "hostkey2", "listname"))
-    when(storage.getChunksForHostKeys(Set("hostkey1", "hostkey2"))).thenReturn(addChunks)
+    when(storage.getChunksForHostKeys(Seq("hostkey1", "hostkey2"))).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix(Set("hostkey1", "hostkey2"), Seq(e1, e2))
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey1", "hostkey2"), Seq(e1, e2))
     assertThat(chunks.size, is(4))
     assertThat(chunks(0).chunknum, is(2))
     assertThat(chunks(1).chunknum, is(3))

@@ -84,15 +84,21 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     logger.debug("Creating table: "+TABLE_PREFIX+"Updates")
     val schema = """	
 		CREATE TABLE """+TABLE_PREFIX+"""Updates (
+		    sList VARCHAR( 50 ) NOT NULL PRIMARY KEY,
       		dtLastSuccess TIMESTAMP,
 			dtLastAttempt TIMESTAMP NOT NULL,
 			dtNextAttempt TIMESTAMP NOT NULL,
-			iErrorCount INT NOT NULL,
-			sList VARCHAR( 50 ) NOT NULL
+			iErrorCount INT NOT NULL
 		)
 	"""
-
     execute(schema)
+    
+    val index = """
+		CREATE UNIQUE INDEX IDX_"""+TABLE_PREFIX+"""Updates_Unique ON """+TABLE_PREFIX+"""Updates (
+			sList
+		)
+	"""
+    execute(index)
   }
 
   def createTableAddChunks = {
@@ -275,7 +281,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
     }
   }
 
-  override def getChunksForHostKeys(hostkeys: Set[String]): Seq[Chunk] = {
+  override def getChunksForHostKeys(hostkeys: Seq[String]): Seq[Chunk] = {
     // TODO: This looks ugly...
     val flattedKeys = hostkeys.map(k => "'" + k + "'").reduceLeft((x,y) => x + ", " + y)
 
@@ -334,7 +340,7 @@ class DBI(jt: JdbcTemplate, tablePrefix: String) extends Storage with Logging {
   }
 
   override def getListStatus(list: String): Option[Status] = {
-    query("SELECT * FROM "+TABLE_PREFIX+"Updates WHERE sList = ? LIMIT 1", list).option(row => {
+    query("SELECT * FROM "+TABLE_PREFIX+"Updates WHERE sList = ?", list).option(row => {
       val lastAttempt = row.getTimestamp("dtLastAttempt")
       val lastSuccess = Option(row.getTimestamp("dtLastSuccess")).map(new DateTime(_))
       val nextAttempt = row.getTimestamp("dtNextAttempt")

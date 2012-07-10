@@ -22,6 +22,7 @@ import com.buildabrand.gsb.util.URLUtils
 import scala.math.min
 import util.Logging
 import util.Helpers._
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Does the conversion URL -> list of SafeBrowsing expressions.
@@ -47,10 +48,10 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
   // A list of paths used to build expressions.
   val path_exprs = makePathList(url)
 
-  lazy val hostKeys = makeHostKeys(canonical_host)
-
-  def getHostKeys = {
-    hostKeys
+  lazy val hostKeys: Seq[String] = makeHostKeys(canonical_host).map(k => bytes2Hex(sha256(k).take(4)))
+  
+  def getHostKeys: Array[String] = {
+    hostKeys.toArray[String]
   }
 
   def expressions: Seq[Expression] = {
@@ -135,29 +136,24 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
    * or two host components if a third does not exist and
    * append a trailing slash (/) to this string.
    *
-   * "To be clear, to match a URL against a host key, a client must try matching based upon the two most significant host components,
-   *  and also the three most significant host components if three such components exist."
-   *
    * @param host the canonicalized host
    * @return host key
    */
-  protected[safebrowsing2] def makeHostKeys(host: String): Set[String] = {
+  protected[safebrowsing2] def makeHostKeys(host: String): Seq[String] = {
 
     if (host.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
-      return Set(makeHostKey(host))
+      return Seq(host)
     }
 
+    val hostKeys = new ArrayBuffer[String]()
     val parts = host.split("""\.""")
-    val three_most_significant_hostKey = makeHostKey(parts.takeRight(3).mkString(".") + "/")
-    val two_most_significant_hostKey = makeHostKey(parts.takeRight(2).mkString(".") + "/")
-    val hostKeys = Set(three_most_significant_hostKey, two_most_significant_hostKey)
-    logger.debug("HostKeys: {} -> {}", host, hostKeys)
-    hostKeys
-  }
-
-  private def makeHostKey(host: String): String = {
-    bytes2Hex(sha256(host).take(4))
+    hostKeys += parts.takeRight(2).mkString(".") + "/"
+    if (parts.length > 2)
+      hostKeys += parts.takeRight(3).mkString(".") + "/"
+      
+    logger.debug("HostKey: {} -> {}", hostKeys)
+    hostKeys.seq
   }
 }
 
