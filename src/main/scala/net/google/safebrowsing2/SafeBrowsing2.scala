@@ -228,15 +228,15 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     val generator = new ExpressionGenerator(url)
     val expressions = generator.expressions
-    val hostKey = generator.hostKey
-    lookup_hostKey(candidates, expressions, hostKey, withMac)
+    val hostKeys = generator.hostKeys
+    lookup_hostKey(candidates, expressions, hostKeys, withMac)
   }
 
   @throws(classOf[ApiException])
-  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKey: String, withMac: Boolean): Option[String] = {
+  private def lookup_hostKey(lists: Seq[String], expressions: Seq[Expression], hostKeys: Seq[String], withMac: Boolean): Option[String] = {
 
     // Local lookup
-    val add_chunks = local_lookup_suffix(hostKey, expressions)
+    val add_chunks = local_lookup_suffix(hostKeys, expressions)
     if (add_chunks.isEmpty) {
       logger.debug("No hit in local lookup")
       return None
@@ -401,9 +401,9 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
   /**
    * Lookup a host prefix in the local database only.
    */
-  protected[safebrowsing2] def local_lookup_suffix(host_key: String, expressions: Seq[Expression]): Seq[Chunk] = {
+  protected[safebrowsing2] def local_lookup_suffix(host_keys: Seq[String], expressions: Seq[Expression]): Seq[Chunk] = {
 
-    var chunks = storage.getChunksForHostKey(host_key)
+    var chunks = host_keys.map(key => storage.getChunksForHostKey(key)).reduce(_ ++ _)
     if (chunks.isEmpty) {
       logger.debug("No un-subbed host key");
       return Nil

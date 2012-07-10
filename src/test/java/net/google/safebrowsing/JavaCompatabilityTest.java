@@ -47,7 +47,7 @@ public class JavaCompatabilityTest {
 	public void getKeys() {
 		String url = "http://www.google.com";
 		ExpressionGenerator gen = new ExpressionGenerator(url);
-		System.out.println("Host key for url: " + gen.getHostKey());
+		System.out.println("Host keys for url: " + gen.getHostKeys());
 		System.out.println("Expressions for URL:");
 		for (Expression exp : gen.getExpressions()) {
 			System.out.println("	" + exp.value() + " -> " + exp.hexHash());

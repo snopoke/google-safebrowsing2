@@ -37,20 +37,22 @@ class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
 
   @Test
   def testMakeHostKey = {
-    val domain = eb.makeHostKey("www.google.com")
-    assertThat(domain, is("www.google.com/"))
+    val domain = eb.makeHostKeys("www.google.com")
+    assertThat(domain(0), is("google.com/"))
+    assertThat(domain(1), is("www.google.com/"))
   }
 
   @Test
   def testMakeHostKey_short = {
-    val domain = eb.makeHostKey("google.com")
-    assertThat(domain, is("google.com/"))
+    val domain = eb.makeHostKeys("google.com")
+    assertThat(domain(0), is("google.com/"))
   }
 
   @Test
   def testMakeHostKey_long = {
-    val domain = eb.makeHostKey("malware.testing.google.test")
-    assertThat(domain, is("testing.google.test/"))
+    val domain = eb.makeHostKeys("malware.testing.google.test")
+    assertThat(domain(0), is("google.test/"))
+    assertThat(domain(1), is("testing.google.test/"))
   }
 
   @Test

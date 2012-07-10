@@ -202,14 +202,26 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
     val sig = getMac(data.getBytes(),"clientkey") 
     val hashes = sb2.parseFullHashes((sig + "\n" + data).getBytes(), Some(MacKey("clientkey","wrappedkey")))
   }
+  
+  @Test
+  def testLocalLookupSuffix_multipleHostKeys = {
+    val e = Expression("www.test.com", "/1.html")
+    val addChunk1 = Seq(Chunk(234, e.hexHash.take(4), "hostkey", "listname"))
+    val addChunk2 = Seq(Chunk(456, e.hexHash.take(4), "hostkey", "listname"))
+    when(storage.getChunksForHostKey("hostkey1")).thenReturn(addChunk1)
+    when(storage.getChunksForHostKey("hostkey2")).thenReturn(addChunk2)
 
-    @Test
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey1", "hostkey2"), Seq(e))
+    assertThat(chunks.length, is(2))
+  }
+
+  @Test
   def testLocalLookupSuffix_noMatch = {
     val e = Expression("www.test.com", "/1.html")
     val addChunks = Seq(Chunk(123, "nonmatchingprefix", "hostkey", "listname"))
     when(storage.getChunksForHostKey("hostkey")).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix("hostkey", Seq(e))
+    val chunks = sb2.local_lookup_suffix(Seq("hostkey"), Seq(e))
     assertTrue(chunks.isEmpty)
   }
 
@@ -220,7 +232,7 @@ class SafeBrowsing2Tests extends MockitoSugar with ByteUtil {
       Chunk(234, e.hexHash.take(4), "hostkey", "listname"))
     when(storage.getChunksForHostKey("suffix")).thenReturn(addChunks)
 
-    val chunks = sb2.local_lookup_suffix("suffix", Seq(e))
+    val chunks = sb2.local_lookup_suffix(Seq("suffix"), Seq(e))
     assertThat(chunks.size, is(1))
     assertThat(chunks(0).chunknum, is(234))
   }

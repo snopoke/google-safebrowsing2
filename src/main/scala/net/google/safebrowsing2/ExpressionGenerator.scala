@@ -22,6 +22,7 @@ import com.buildabrand.gsb.util.URLUtils
 import scala.math.min
 import util.Logging
 import util.Helpers._
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Does the conversion URL -> list of SafeBrowsing expressions.
@@ -47,10 +48,10 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
   // A list of paths used to build expressions.
   val path_exprs = makePathList(url)
 
-  lazy val hostKey = bytes2Hex(sha256(makeHostKey(canonical_host)).take(4))
+  lazy val hostKeys: Seq[String] = makeHostKeys(canonical_host).map(k => bytes2Hex(sha256(k).take(4)))
   
-  def getHostKey = {
-    hostKey
+  def getHostKeys: Array[String] = {
+    hostKeys.toArray[String]
   }
 
   def expressions: Seq[Expression] = {
@@ -138,17 +139,21 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
    * @param host the canonicalized host
    * @return host key
    */
-  protected[safebrowsing2] def makeHostKey(host: String): String = {
+  protected[safebrowsing2] def makeHostKeys(host: String): Seq[String] = {
 
     if (host.matches("""\d+\.\d+\.\d+\.\d+""")) {
       // loose check for IP address, should be enough
-      return host
+      return Seq(host)
     }
 
+    val hostKeys = new ArrayBuffer[String]()
     val parts = host.split("""\.""")
-    val hostKey = parts.takeRight(3).mkString(".")
-    logger.debug("HostKey: {} -> {}", host, hostKey)
-    hostKey + "/" // Don't forget trailing slash
+    hostKeys += parts.takeRight(2).mkString(".") + "/"
+    if (parts.length > 2)
+      hostKeys += parts.takeRight(3).mkString(".") + "/"
+      
+    logger.debug("HostKey: {} -> {}", hostKeys)
+    hostKeys.seq
   }
 }
 
