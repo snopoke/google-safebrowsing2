@@ -66,6 +66,30 @@ Outputs:
 		System.out.println(key + " -> " + r.get(key));
 	}
 
+## Test URLs
+The follow URLs are used to test Safe Browsing API:
+
+### Malware
+* http://www.ianfette.org
+* http://www.ianfette.org/test/123
+* http://ianfette.org
+* http://ianfette.org/test/123
+* http://www.gumblar.cn
+* http://www.gumblar.cn/test/123
+* http://gumblar.cn
+* http://gumblar.cn/test/123
+* http://malware.testing.google.test/testing/malware/
+
+### Phishing
+* http://freepaccek.w.interia.pl
+* http://freepaccek.w.interia.pl/test/123
+
+### Good
+* http://www.google.com
+* http://google.com
+* http://malware.testing.google.test
+* http://malware.testing.google.test/testing/malware
+
 ## Database support
 The following databases are currently supported:
 * MySQL
