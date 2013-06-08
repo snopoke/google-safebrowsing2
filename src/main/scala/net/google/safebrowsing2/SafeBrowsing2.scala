@@ -324,7 +324,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
     val sizeMap = mutable.Map[Int, ListBuffer[Chunk]]()
     toFetch.foreach(c => {
-      sizeMap.getOrElseUpdate(c.prefix.length, ListBuffer[Chunk]()) += c
+      val len = if (c.prefix.isEmpty) c.hostkey.length else c.prefix.length
+      sizeMap.getOrElseUpdate(len, ListBuffer[Chunk]()) += c
     })
 
     var hashes = mutable.ListBuffer[Hash]()
@@ -340,14 +341,18 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     if (prefixes.isEmpty) return Nil
 
     prefixes foreach (p => {
-      if (p.prefix.length != prefixLength) {
+      val len = if (p.prefix.isEmpty) p.hostkey.length else p.prefix.length
+      if (len != prefixLength) {
         throw new ApiException("All prefixes must have length " + prefixLength)
       }
     })
 
     val prefixSize = prefixLength / 2 // Each char is in hex (16 bit) -> byteSize = prefixLength * 16bit / 8bit
     val header = (prefixSize + ":" + prefixSize * prefixes.size + "\n").getBytes()
-    val body = header ++ prefixes.map(p => hex2Bytes(p.prefix)).reduce(_ ++ _)
+    val body = header ++ prefixes.map(p => {
+      val prefix = if (p.prefix.isEmpty()) p.hostkey else p.prefix
+      hex2Bytes(prefix)
+    }).reduce(_ ++ _)
     logger.trace("Full hash request body:\n{}", new String(body))
 
     var url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;

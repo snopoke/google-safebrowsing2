@@ -27,9 +27,9 @@ import org.mockito.Mockito
 import org.mockito.Matchers
 import com.github.tototoshi.http.Response
 import org.apache.http.HttpResponse
-import util.Helpers._
 import net.google.safebrowsing2.db.DBI
 import java.net.URL
+import util.Helpers._
 
 class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
 
