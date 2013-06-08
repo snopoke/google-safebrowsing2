@@ -1,5 +1,6 @@
 package com.buildabrand.gsb.util;
 
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -29,6 +30,7 @@ public class URLUtils {
 	protected final Logger logger = LoggerFactory.getLogger(getClass());
 	
 	private static UrlEncoder codec = new UrlEncoder();
+    private static String IPValidation = "^(\\d+|(0[xX][0-9a-fA-F]+))(\\.(\\d+|(0[xX][0-9a-fA-F]+))){0,3}$";
 	private static URLUtils instance;
 	
 	/* singleton */
@@ -73,14 +75,41 @@ public class URLUtils {
 	 * @return
 	 */
 	private String decodeHost(String host) {
-        try {
-            long ipInt = Long.parseLong(host);
-            return InetAddresses.fromInteger((int)ipInt).getHostAddress();
-        } catch (NumberFormatException e) {
-            // It is ok not to be integer.
+        if (host.matches(IPValidation)) {
+            return InetAddresses.fromInteger(convertIpAddress(host)).getHostAddress();
+        } else {
             return host.toLowerCase();
         }
 	}
+
+    private int convertIpAddress(String ipAddr) {
+        String[] components = ipAddr.split("\\.");
+
+        BigInteger ipNumeric = BigInteger.ZERO;
+        int i = 0;
+        while (i < components.length - 1) {
+            ipNumeric = ipNumeric.shiftLeft(8);
+            ipNumeric = ipNumeric.add(convertComponent(components[i]));
+            i++;
+        }
+        while (i < 4) {
+            ipNumeric = ipNumeric.shiftLeft(8);
+            i++;
+        }
+        ipNumeric = ipNumeric.add(convertComponent(components[components.length - 1]));
+
+        return ipNumeric.intValue();
+    }
+
+    private BigInteger convertComponent(String component) {
+        if (component.startsWith("0x") || component.startsWith("0X")) {
+            return new BigInteger(component.substring(2), 16);
+        } else if (component.startsWith("0")) {
+            return new BigInteger(component, 8);
+        } else {
+            return new BigInteger(component);
+        }
+    }
 		
 	
 	/** Returns the canonicalized form of a URL, core logic written by Henrik Sjostrand, heavily modified for v2 by Dave Shanley.
@@ -123,7 +152,7 @@ public class URLUtils {
 
 
 			/* escape non standard characters for host */
-			StringBuffer sb = new StringBuffer();
+			StringBuilder sb = new StringBuilder();
 			for (int i = 0; i < host.length(); i++) {
 				char c = host.charAt(i);
 				if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '.' || c == '-')
