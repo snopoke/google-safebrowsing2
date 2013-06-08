@@ -68,6 +68,7 @@ public class CanonicalizationTest {
         testCannicalize("http://12.0x12.01234/", "http://12.18.2.156/");
         testCannicalize("http://276.2.3/", "http://20.2.0.3/");
         testCannicalize("http://0x10000000b/", "http://0.0.0.11/");
+        testCannicalize("http://0x120x34/", "http://012034/");
         testCannicalize("http://123.123.0.0.1/", "http://123.123.0.0.1/");
         testCannicalize("http://1.2.3.00x0/", "http://1.2.3.00x0/");
     }
