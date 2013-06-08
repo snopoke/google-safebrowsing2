@@ -248,11 +248,6 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
     val hashesInStore = new ListBuffer[String]()
     add_chunks foreach (achunk => {
       if (lists.contains(achunk.list)) {
-        if (achunk.prefix.isEmpty) {
-          logger.debug("Chunk without prefix is found")
-          return Some(achunk.list)
-        }
-
         val hashes = storage.getFullHashes(achunk.chunknum, new DateTime().minus(Period.minutes(45)), achunk.list)
         logger.debug("Full hashes already stored for chunk " + achunk.chunknum + ": " + hashes.length)
         hashesInStore ++= hashes
