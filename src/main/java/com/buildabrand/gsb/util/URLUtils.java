@@ -1,14 +1,13 @@
 package com.buildabrand.gsb.util;
 
-
-import java.net.InetAddress;
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.common.net.InetAddresses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +30,7 @@ public class URLUtils {
 	protected final Logger logger = LoggerFactory.getLogger(getClass());
 	
 	private static UrlEncoder codec = new UrlEncoder();
-	private static String IPValidation = "^([1-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])){3}$";
+    private static String IPValidation = "^(\\d+|(0[xX][0-9a-fA-F]+))(\\.(\\d+|(0[xX][0-9a-fA-F]+))){0,3}$";
 	private static URLUtils instance;
 	
 	/* singleton */
@@ -76,31 +75,41 @@ public class URLUtils {
 	 * @return
 	 */
 	private String decodeHost(String host) {
-		// TODO: don't use InetAddress since it can be slow
-		
-		try {
-			logger.debug("checking host for IP: {}", host);
-			if(host.matches(IPValidation)) return host.toLowerCase();
-			
-			InetAddress addr = InetAddress.getByName(host);
-			if(host.indexOf('.')>-1) { // most likely a domain 
-				logger.debug("host contains period");
-				return addr.getHostName().toLowerCase();
-			
-			} else {
-				
-				logger.debug("host does not contain a period");
-				if(!addr.getHostName().matches(IPValidation)) return addr.getHostAddress();
-				return addr.getHostName().toLowerCase();
-					
-			}
-			
-		} catch (UnknownHostException exp) {
-			logger.debug("UnknownHostException for host: {}", host);
-			return host;
-		}
-		
+        if (host.matches(IPValidation)) {
+            return InetAddresses.fromInteger(convertIpAddress(host)).getHostAddress();
+        } else {
+            return host.toLowerCase();
+        }
 	}
+
+    private int convertIpAddress(String ipAddr) {
+        String[] components = ipAddr.split("\\.");
+
+        BigInteger ipNumeric = BigInteger.ZERO;
+        int i = 0;
+        while (i < components.length - 1) {
+            ipNumeric = ipNumeric.shiftLeft(8);
+            ipNumeric = ipNumeric.add(convertComponent(components[i]));
+            i++;
+        }
+        while (i < 4) {
+            ipNumeric = ipNumeric.shiftLeft(8);
+            i++;
+        }
+        ipNumeric = ipNumeric.add(convertComponent(components[components.length - 1]));
+
+        return ipNumeric.intValue();
+    }
+
+    private BigInteger convertComponent(String component) {
+        if (component.startsWith("0x") || component.startsWith("0X")) {
+            return new BigInteger(component.substring(2), 16);
+        } else if (component.startsWith("0")) {
+            return new BigInteger(component, 8);
+        } else {
+            return new BigInteger(component);
+        }
+    }
 		
 	
 	/** Returns the canonicalized form of a URL, core logic written by Henrik Sjostrand, heavily modified for v2 by Dave Shanley.
@@ -117,12 +126,12 @@ public class URLUtils {
 		String url = queryURL;
 		
 		try {
-			
+
 			/* first of all extract the components of the URL to make sure that it has a protocol! */
 			if(url.indexOf("http://") <=-1 && url.indexOf("https://")<=-1) url = "http://"+url;
 			
 			url = url.replaceAll("[\\t\\n\\r\\f\\e]*", ""); // replace all whitespace and escape characters.
-			
+
 			URL theURL = new URL(url);
 			String host = theURL.getHost();
 			String path = theURL.getPath();
@@ -131,19 +140,19 @@ public class URLUtils {
 			if(protocol==null||protocol.isEmpty()) protocol = "http";
 			int port = theURL.getPort();
 			String user = theURL.getUserInfo();
-			
+
 			/* escape host */
 			logger.debug("pre-escaped host: {}", host);
 			host = unescape(host);
 			logger.debug("post-escaped host: {}", host);
-			
+
 			/* decode host / IP */
 			host = decodeHost(host);
 			logger.debug("decoded host: {}", host);
-			
-		
+
+
 			/* escape non standard characters for host */
-			StringBuffer sb = new StringBuffer();
+			StringBuilder sb = new StringBuilder();
 			for (int i = 0; i < host.length(); i++) {
 				char c = host.charAt(i);
 				if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '.' || c == '-')
@@ -178,15 +187,15 @@ public class URLUtils {
 	               host = matcher.replaceAll(val);
 	              logger.debug("::TEXT {}", host);
 		    }
-			
+
 			/* replace any encoded percentage signs */
 		    host = host.replaceAll("(?i)%5C", "%");
-		       
+
 			/* unescape path to remove all hex encodings */
 		    logger.debug("pre-escaped path: {}", path);
 			path = unescape(path);
 			logger.debug("post-escaped path: {}", path);
-			
+
 			/* remove double slashes from path  */
 			while ((p = path.indexOf("//")) != -1)
 				path = path.substring(0, p + 1) + path.substring(p + 2);
@@ -202,41 +211,41 @@ public class URLUtils {
 				path = path.substring(0, previousSlash) + path.substring(p + 3);
 				p = previousSlash;
 			}
-			
+
 			/* use URI class to normalise the URL */
 			URI uri = null;
 			try {
-				
+
 				/* only normalise if the host doesn't contain some odd hex */
 				if(!host.contains("%") && !host.matches("[\\s].*")) { 
 					logger.debug("normalising URL......");
 					uri = new URI(protocol, user, host, -1, path, query, null);
 					logger.debug("{} <-- normalised path", uri.normalize().getPath().toString());
 				}
-				
+
 			} catch (URISyntaxException exp) {
 				
 				try {
-					
+
 					/* only normalise if the host doesn't contain some odd hex */
 					if(!host.contains("%") && !host.matches(".*[\\s].*")) { 
 						logger.debug("error normalising URL");
 						uri = new URI(protocol, user, unescape(host), -1, path, query, null);
 						logger.debug("{} <-- normalised path after error debug", uri.normalize().getPath().toString());
 					}
-				
+
 				} catch (URISyntaxException e) {
 					
 					// total fail, forget it.
 				}
 			}
-			
+
 			/* only use URI normalized URL if it's not a total failure */
 			if(uri!=null && !uri.normalize().getPath().toString().trim().isEmpty()) {
 				logger.debug("normalized path is: empty!");
 				path = uri.normalize().getPath().toString();
 			}  
-				
+
 			/* debug code */
 			logger.debug("post-cleaned path: {}", path);
 			logger.debug("post-processed host: {}", host);
@@ -244,17 +253,17 @@ public class URLUtils {
 			
 			/* escape the path */
 			path = escape(path);
-			
+
 			/* replace all semi-colons */
 			path = path.replaceAll("[;]*", ""); 
-			
+
 			/* unescape the query */
 			query = unescape(query);
 
 			/* re-escape the query */
 			query = escape(query);
 
-			
+
 			/* re-assemble the URL */
 			sb.setLength(0);
 			sb.append(protocol + ":");
@@ -262,9 +271,9 @@ public class URLUtils {
 			sb.append("//");
 			if (user != null)
 				sb.append(user + "@");
-		
+
 			if (port != -1) {
-				
+
 				/* remove slash from host */
 				logger.debug("removing last slash: {}", host.lastIndexOf("/",host.length()));
 				
@@ -290,7 +299,7 @@ public class URLUtils {
 				sb.append("?" + query);
 			
 			url = sb.toString();
-			
+
 			logger.debug("canonicalised url is: {}", url);
 			
 			
