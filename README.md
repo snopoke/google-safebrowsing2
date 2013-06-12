@@ -112,3 +112,4 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 * URL Canonicalization by Dave Shanley as part of [jgooglesafebrowsing](http://code.google.com/p/jgooglesafebrowsing/).
 * ExpressionGenerator inspired by the [google-safe-browsing](http://code.google.com/p/google-safe-browsing/) python module.
 * JDBC API by [Stepan Koltsov](https://bitbucket.org/stepancheg/scala-misc/)
+* [Edward Chu](https://github.com/edwardchu)
