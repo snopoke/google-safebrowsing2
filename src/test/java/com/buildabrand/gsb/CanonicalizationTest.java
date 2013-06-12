@@ -58,6 +58,20 @@ public class CanonicalizationTest {
 		testCannicalize("http://host.com/what/do/../think/..","http://host.com/what/");
 		testCannicalize("http://host.com/what/do/./think/../hello","http://host.com/what/do/hello");
 	}
+
+    @Test
+    public void testIpAddress() {
+        testCannicalize("http://1.2.3.4/", "http://1.2.3.4/");
+        testCannicalize("http://012.034.01.055/", "http://10.28.1.45/");
+        testCannicalize("http://0x12.0x43.0x44.0x01/", "http://18.67.68.1/");
+        testCannicalize("http://167838211/", "http://10.1.2.3/");
+        testCannicalize("http://12.0x12.01234/", "http://12.18.2.156/");
+        testCannicalize("http://276.2.3/", "http://20.2.0.3/");
+        testCannicalize("http://0x10000000b/", "http://0.0.0.11/");
+        testCannicalize("http://0x120x34/", "http://012034/");
+        testCannicalize("http://123.123.0.0.1/", "http://123.123.0.0.1/");
+        testCannicalize("http://1.2.3.00x0/", "http://1.2.3.00x0/");
+    }
 	
 	private void testCannicalize(String url, String expected) {
 		String result = utils.canonicalizeURL(url);
