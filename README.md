@@ -1,4 +1,5 @@
 # Google Safebrowsing API v2 for Scala and Java
+[![Build Status](https://travis-ci.org/snopoke/google-safebrowsing2.png)](https://travis-ci.org/snopoke/google-safebrowsing2)
 
 This project implements the [Google Safebrowsing API v2](https://developers.google.com/safe-browsing/) 
 and the [Google Safebrowsing Lookup API](https://developers.google.com/safe-browsing/lookup_guide) in Scala.
