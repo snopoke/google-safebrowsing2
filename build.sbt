@@ -4,7 +4,7 @@ organization := "com.github.snopoke"
 
 name := "safebrowsing2"
 
-version := "0.1.0"
+version := "0.2.4"
 
 scalaVersion := "2.9.1"
 
