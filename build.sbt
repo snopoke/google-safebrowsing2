@@ -9,6 +9,7 @@ version := "0.1.0"
 scalaVersion := "2.9.1"
 
 libraryDependencies ++= Seq(
+  "org.apache.commons" % "commons-lang3" % "3.1",
   "com.google.guava" % "guava" % "12.0.1",
   "org.slf4j" % "slf4j-api" % "1.6.4",
   "org.slf4j" % "slf4j-log4j12" % "1.6.4" % "provided",

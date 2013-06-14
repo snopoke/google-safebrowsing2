@@ -50,26 +50,13 @@ public class UrlEncoder  {
      * is being used in a context that does not allow the unescaped character to appear.
      */
     private static final BitSet RFC2396_UNRESERVED_CHARACTERS = new BitSet(256);
-    private static final BitSet RFC2396_UNRESERVED_WITH_SLASH_CHARACTERS;
 
     public static final char ESCAPE_CHARACTER = '%';
 
     static {
-        RFC2396_UNRESERVED_CHARACTERS.set('a', 'z' + 1);
-        RFC2396_UNRESERVED_CHARACTERS.set('A', 'Z' + 1);
-        RFC2396_UNRESERVED_CHARACTERS.set('0', '9' + 1);
-        RFC2396_UNRESERVED_CHARACTERS.set('-');
-        RFC2396_UNRESERVED_CHARACTERS.set('_');
-        RFC2396_UNRESERVED_CHARACTERS.set('.');
-        RFC2396_UNRESERVED_CHARACTERS.set('!');
-        RFC2396_UNRESERVED_CHARACTERS.set('~');
-        RFC2396_UNRESERVED_CHARACTERS.set('*');
-        RFC2396_UNRESERVED_CHARACTERS.set('\'');
-        RFC2396_UNRESERVED_CHARACTERS.set('(');
-        RFC2396_UNRESERVED_CHARACTERS.set(')');
-
-        RFC2396_UNRESERVED_WITH_SLASH_CHARACTERS = (BitSet)RFC2396_UNRESERVED_CHARACTERS.clone();
-        RFC2396_UNRESERVED_WITH_SLASH_CHARACTERS.set('/');
+        RFC2396_UNRESERVED_CHARACTERS.set(33, 127);
+        RFC2396_UNRESERVED_CHARACTERS.clear('%');
+        RFC2396_UNRESERVED_CHARACTERS.clear('#');
     }
 
     private boolean slashEncoded = true;
@@ -80,7 +67,7 @@ public class UrlEncoder  {
     public String encode( String text ) {
         if (text == null) return null;
         if (text.length() == 0) return text;
-        final BitSet safeChars = isSlashEncoded() ? RFC2396_UNRESERVED_CHARACTERS : RFC2396_UNRESERVED_WITH_SLASH_CHARACTERS;
+        final BitSet safeChars = RFC2396_UNRESERVED_CHARACTERS;
         final StringBuilder result = new StringBuilder();
         final CharacterIterator iter = new StringCharacterIterator(text);
         for (char c = iter.first(); c != CharacterIterator.DONE; c = iter.next()) {
@@ -90,8 +77,8 @@ public class UrlEncoder  {
             } else {
                 // The character is not a safe character, and must be escaped ...
                 result.append(ESCAPE_CHARACTER);
-                result.append(Character.toLowerCase(Character.forDigit(c / 16, 16)));
-                result.append(Character.toLowerCase(Character.forDigit(c % 16, 16)));
+                result.append(Character.toUpperCase(Character.forDigit(c / 16, 16)));
+                result.append(Character.toUpperCase(Character.forDigit(c % 16, 16)));
             }
         }
         return result.toString();
@@ -109,6 +96,7 @@ public class UrlEncoder  {
             if (c == ESCAPE_CHARACTER) {
                 boolean foundEscapedCharacter = false;
                 // Found the first character in a potential escape sequence, so grab the next two characters ...
+                int cIdx = iter.getIndex();
                 char hexChar1 = iter.next();
                 char hexChar2 = hexChar1 != CharacterIterator.DONE ? iter.next() : CharacterIterator.DONE;
                 if (hexChar2 != CharacterIterator.DONE) {
@@ -121,31 +109,15 @@ public class UrlEncoder  {
                     }
                 }
                 if (!foundEscapedCharacter) {
+                    // This is not escape, so we should restore the index.
                     result.append(c);
-                    if (hexChar1 != CharacterIterator.DONE) result.append(hexChar1);
-                    if (hexChar2 != CharacterIterator.DONE) result.append(hexChar2);
+                    iter.setIndex(cIdx);
                 }
             } else {
                 result.append(c);
             }
         }
         return result.toString();
-    }
-
-    /**
-     * @return slashEncoded
-     */
-    public boolean isSlashEncoded() {
-        return this.slashEncoded;
-    }
-
-    /**
-     * @param slashEncoded Sets slashEncoded to the specified value.
-     * @return this object, for method chaining
-     */
-    public UrlEncoder setSlashEncoded( boolean slashEncoded ) {
-        this.slashEncoded = slashEncoded;
-        return this;
     }
 
 }

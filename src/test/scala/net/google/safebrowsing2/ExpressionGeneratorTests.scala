@@ -17,19 +17,9 @@
 package net.google.safebrowsing2
 import org.junit.Test
 import org.junit.Assert._
-import org.junit.matchers.JUnitMatchers._
 import org.hamcrest.CoreMatchers._
-import org.junit.Before
 import org.scalatest.mock.MockitoSugar
-import org.mockito.Mockito._
-import com.github.tototoshi.http.Client
-import org.mockito.Mockito
-import org.mockito.Matchers
-import com.github.tototoshi.http.Response
-import org.apache.http.HttpResponse
-import net.google.safebrowsing2.db.DBI
 import java.net.URL
-import util.Helpers._
 
 class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
 
@@ -121,7 +111,14 @@ class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
   }
 
   @Test
-  def testExpressions = {
+  def testExpression = {
+    val e = Expression("a.b.c", "/1/2.html?param=1")
+    assertThat(e.value, is("a.b.c/1/2.html?param=1"))
+    assertThat(e.hexHash.length, is(64))
+  }
+
+  @Test
+  def testExpressionsOne = {
     val expressions = new ExpressionGenerator("http://a.b.c/1/2.html?param=1").expressions
     assertThat(expressions.size, is(8))
     assertTrue(expressions.contains(Expression("a.b.c", "/1/2.html?param=1")))
@@ -135,9 +132,116 @@ class ExpressionGeneratorTests extends MockitoSugar with ByteUtil {
   }
 
   @Test
-  def testExpression = {
-    val e = Expression("a.b.c", "/1/2.html?param=1")
-    assertThat(e.value, is("a.b.c/1/2.html?param=1"))
-    assertThat(e.hexHash.length, is(64))
+  def testExpressionsTwo = {
+    val e = new ExpressionGenerator("http://12.0x12.01234/a/b/cde/f?g=foo&h=bar#quux").expressions
+    assertThat(e.size, is(6))
+    assertTrue(e.contains(Expression("12.18.2.156", "/a/b/cde/f?g=foo&h=bar")))
+    assertTrue(e.contains(Expression("12.18.2.156", "/a/b/cde/f")))
+    assertTrue(e.contains(Expression("12.18.2.156", "/a/b/cde/")))
+    assertTrue(e.contains(Expression("12.18.2.156", "/a/b/")))
+    assertTrue(e.contains(Expression("12.18.2.156", "/a/")))
+    assertTrue(e.contains(Expression("12.18.2.156", "/")))
+  }
+
+  @Test
+  def testExpressionsThree = {
+    val e = new ExpressionGenerator("http://www.google.com/a/b/cde/f?g=foo&h=bar#quux").expressions
+    assertThat(e.size, is(12))
+
+    assertTrue(e.contains(Expression("www.google.com", "/a/b/cde/f?g=foo&h=bar")))
+    assertTrue(e.contains(Expression("www.google.com", "/a/b/cde/f")))
+    assertTrue(e.contains(Expression("www.google.com", "/a/b/cde/")))
+    assertTrue(e.contains(Expression("www.google.com", "/a/b/")))
+    assertTrue(e.contains(Expression("www.google.com", "/a/")))
+    assertTrue(e.contains(Expression("www.google.com", "/")))
+
+    assertTrue(e.contains(Expression("google.com", "/a/b/cde/f?g=foo&h=bar")))
+    assertTrue(e.contains(Expression("google.com", "/a/b/cde/f")))
+    assertTrue(e.contains(Expression("google.com", "/a/b/cde/")))
+    assertTrue(e.contains(Expression("google.com", "/a/b/")))
+    assertTrue(e.contains(Expression("google.com", "/a/")))
+    assertTrue(e.contains(Expression("google.com", "/")))
+  }
+
+  @Test
+  def testExpressionsFour = {
+    val e = new ExpressionGenerator("http://a.b.c.d.e.f.g/h/i/j/k/l/m/n/o?p=foo&q=bar#quux").expressions
+    assertThat(e.size, is(30))
+
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/h/i/j/k/l/m/n/o?p=foo&q=bar")))
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/h/i/j/k/l/m/n/o")))
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/h/i/j/")))
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/h/i/")))
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/h/")))
+    assertTrue(e.contains(Expression("a.b.c.d.e.f.g", "/")))
+
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/h/i/j/k/l/m/n/o?p=foo&q=bar")))
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/h/i/j/k/l/m/n/o")))
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/h/i/j/")))
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/h/i/")))
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/h/")))
+    assertTrue(e.contains(Expression("c.d.e.f.g", "/")))
+
+    assertTrue(e.contains(Expression("d.e.f.g", "/h/i/j/k/l/m/n/o?p=foo&q=bar")))
+    assertTrue(e.contains(Expression("d.e.f.g", "/h/i/j/k/l/m/n/o")))
+    assertTrue(e.contains(Expression("d.e.f.g", "/h/i/j/")))
+    assertTrue(e.contains(Expression("d.e.f.g", "/h/i/")))
+    assertTrue(e.contains(Expression("d.e.f.g", "/h/")))
+    assertTrue(e.contains(Expression("d.e.f.g", "/")))
+
+    assertTrue(e.contains(Expression("e.f.g", "/h/i/j/k/l/m/n/o?p=foo&q=bar")))
+    assertTrue(e.contains(Expression("e.f.g", "/h/i/j/k/l/m/n/o")))
+    assertTrue(e.contains(Expression("e.f.g", "/h/i/j/")))
+    assertTrue(e.contains(Expression("e.f.g", "/h/i/")))
+    assertTrue(e.contains(Expression("e.f.g", "/h/")))
+    assertTrue(e.contains(Expression("e.f.g", "/")))
+
+    assertTrue(e.contains(Expression("f.g", "/h/i/j/k/l/m/n/o?p=foo&q=bar")))
+    assertTrue(e.contains(Expression("f.g", "/h/i/j/k/l/m/n/o")))
+    assertTrue(e.contains(Expression("f.g", "/h/i/j/")))
+    assertTrue(e.contains(Expression("f.g", "/h/i/")))
+    assertTrue(e.contains(Expression("f.g", "/h/")))
+    assertTrue(e.contains(Expression("f.g", "/")))
+  }
+
+  @Test
+  def testExpressionsFive = {
+    val e = new ExpressionGenerator("http://www.phisher.co.uk/a/b").expressions
+    assertThat(e.size, is(9))
+
+    assertTrue(e.contains(Expression("www.phisher.co.uk", "/a/b")))
+    assertTrue(e.contains(Expression("www.phisher.co.uk", "/a/")))
+    assertTrue(e.contains(Expression("www.phisher.co.uk", "/")))
+
+    assertTrue(e.contains(Expression("phisher.co.uk", "/a/b")))
+    assertTrue(e.contains(Expression("phisher.co.uk", "/a/")))
+    assertTrue(e.contains(Expression("phisher.co.uk", "/")))
+
+    assertTrue(e.contains(Expression("co.uk", "/a/b")))
+    assertTrue(e.contains(Expression("co.uk", "/a/")))
+    assertTrue(e.contains(Expression("co.uk", "/")))
+  }
+
+  @Test
+  def testExpressionsSix = {
+    val e = new ExpressionGenerator("http://a.b/?").expressions
+    assertThat(e.size, is(1))
+    assertTrue(e.contains(Expression("a.b", "/")))
+  }
+
+  @Test
+  def testExpressionsSeven = {
+    val e = new ExpressionGenerator("http://1.2.3.4/a/b").expressions
+    assertThat(e.size, is(3))
+    assertTrue(e.contains(Expression("1.2.3.4", "/a/b")))
+    assertTrue(e.contains(Expression("1.2.3.4", "/a/")))
+    assertTrue(e.contains(Expression("1.2.3.4", "/")))
+  }
+
+  @Test
+  def testExpressionsEight = {
+    val e = new ExpressionGenerator("foo.com").expressions
+    assertThat(e.size, is(1))
+    assertTrue(e.contains(Expression("foo.com", "/")))
   }
 }

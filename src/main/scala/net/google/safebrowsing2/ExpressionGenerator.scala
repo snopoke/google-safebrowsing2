@@ -17,7 +17,6 @@
 package net.google.safebrowsing2
 import java.net.URL
 import scala.collection.mutable
-import scala.util.control.Breaks._
 import com.buildabrand.gsb.util.URLUtils
 import scala.math.min
 import util.Logging
@@ -78,7 +77,7 @@ class ExpressionGenerator(inputUrl: String) extends Logging {
 
     val canonical_path = url.getPath()
 
-    if (url.getQuery() != null) {
+    if (url.getQuery() != null  && !url.getQuery().isEmpty()) {
       paths += canonical_path + "?" + url.getQuery()
     }
     paths += canonical_path
