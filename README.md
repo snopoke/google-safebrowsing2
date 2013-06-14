@@ -110,6 +110,7 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 ## Attributions
 * The is based off Julien Sobrier's [Net-Google-SafeBrowsing2](https://github.com/juliensobrier/Net-Google-SafeBrowsing2) perl module.
 * URL Canonicalization by Dave Shanley as part of [jgooglesafebrowsing](http://code.google.com/p/jgooglesafebrowsing/).
+  * Subsequently heavily modified by [Edward Chu](https://github.com/edwardchu)
 * ExpressionGenerator inspired by the [google-safe-browsing](http://code.google.com/p/google-safe-browsing/) python module.
 * JDBC API by [Stepan Koltsov](https://bitbucket.org/stepancheg/scala-misc/)
 * [Edward Chu](https://github.com/edwardchu)
