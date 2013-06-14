@@ -94,8 +94,10 @@ class Lookup(apikey: String, appName: String, urlBase: String, pver: String) ext
       val body = new StringBuffer(batch.size.toString)
       batch foreach (url => {
         val canonical = URLUtils.getInstance().canonicalizeURL(url)
-        body.append("\n" + canonical)
-        logger.debug("{} => {}", url, canonical)
+        if (canonical != null) {
+          body.append("\n" + canonical)
+          logger.debug("{} => {}", url, canonical)
+        }
       })
       logger.debug("BODY:\n{}\n\n", body)
 

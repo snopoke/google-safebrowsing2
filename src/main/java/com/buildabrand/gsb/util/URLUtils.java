@@ -1,13 +1,14 @@
 package com.buildabrand.gsb.util;
 
 import java.math.BigInteger;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Stack;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.google.common.net.InetAddresses;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,8 +30,19 @@ public class URLUtils {
 	
 	protected final Logger logger = LoggerFactory.getLogger(getClass());
 	
-	private static UrlEncoder codec = new UrlEncoder();
-    private static String IPValidation = "^(\\d+|(0[xX][0-9a-fA-F]+))(\\.(\\d+|(0[xX][0-9a-fA-F]+))){0,3}$";
+	private UrlEncoder codec = new UrlEncoder();
+
+    // (?P<host>[^:]*)(:(?P<port>\d+))?$
+    private Pattern HOST_PORT_REGEXP = Pattern.compile("^(?:.*@)?([^:]*)(:(\\d+))?$");
+    private Pattern IP_WITH_TRAILING_SPACE = Pattern.compile("^(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}) ");
+    private Pattern POSSIBLE_IP = Pattern.compile("^(?i)((?:0x[0-9a-f]+|[0-9\\\\.])+)");
+    private Pattern FIND_BAD_OCTAL_REGEXP = Pattern.compile("(^|\\.)0\\d*[89]");
+    private Pattern HEX = Pattern.compile("^0x([a-fA-F0-9]+)$");
+    private Pattern OCT = Pattern.compile("^0([0-7]+)$");
+    private Pattern DEC = Pattern.compile("^(\\d+)$");
+
+    private String SAFE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+
 	private static URLUtils instance;
 	
 	/* singleton */
@@ -42,298 +54,249 @@ public class URLUtils {
 		}
 		return instance;
 	}
-	
-	
-	/** Unscapes a string repeatedly to remove all escaped characters. Returns null if the string is invalid.
-	 * @param url
+
+	/** Returns the canonicalized form of a URL, core logic written by Henrik Sjostrand, heavily modified for v2 by Dave Shanley.
+	 * @author Henrik Sjostrand, Netvouz, http://www.netvouz.com/, info@netvouz.com & Dave Shanley <dave@buildabrand.com>
+	 * @param queryURL
 	 * @return
-	 * @throws GSBException
 	 */
-	private String unescape(String url) {
-		
-		if (url == null)
+	public String canonicalizeURL(String queryURL) {
+		if (StringUtils.isEmpty(queryURL)) {
 			return null;
-
-		StringBuffer text1 = new StringBuffer(url);
-		url = text1.toString();
-
-		String text2 = url;
-		
-			for(int x = 0; x < 50; x++) { // keep iterating to make sure all those encodings are killed.
-				
-				text2 = codec.decode(text2); // Unescape repeatedly until no more percent signs left
-			}	
-		
-			logger.debug("returning URL: {}", text2);
-		
-		return text2;
-	}
-	
-	/**
-	 * Decode a host, If it is a hostname, return it, if it is an IP decode (encoding, including octal & hex)
-	 * @param host
-	 * @return
-	 */
-	private String decodeHost(String host) {
-        if (host.matches(IPValidation)) {
-            return InetAddresses.fromInteger(convertIpAddress(host)).getHostAddress();
-        } else {
-            return host.toLowerCase();
         }
+
+        // Start by stripping off the fragment identifier.
+        queryURL = StringUtils.substringBefore(queryURL, "#");
+        // Stripping off leading and trailing white spaces.
+        queryURL = StringUtils.trim(queryURL);
+        // Remove any embedded tabs and CR/LF characters which aren't escaped.
+        queryURL = StringUtils.remove(queryURL, '\t');
+        queryURL = StringUtils.remove(queryURL, '\r');
+        queryURL = StringUtils.remove(queryURL, '\n');
+
+        // Un-escape and re-escpae the URL just in case there are some encoded
+        // characters in the url scheme for example.
+        queryURL = escape(queryURL);
+
+
+        URL url;
+        try {
+            url = new URL(queryURL);
+        } catch (MalformedURLException e) {
+            // Try again with "http://"
+            try {
+                url = new URL("http://" + queryURL);
+            } catch (MalformedURLException e2) {
+                logger.error("Malformed url", e);
+                return null;
+            }
+        }
+
+        if (!(url.getProtocol().equalsIgnoreCase("http") ||
+                url.getProtocol().equalsIgnoreCase("https") ||
+                url.getProtocol().equalsIgnoreCase("ftp"))) {
+            return null;
+        }
+
+        // Note: applying HOST_PORT_REGEXP also removes any user and password.
+        Matcher hostMatcher = HOST_PORT_REGEXP.matcher(url.getHost());
+
+        if (!hostMatcher.find()) {
+            return null;
+        }
+
+        String host = hostMatcher.group(1);
+
+        String canonicalHost = canonicalizeHost(host);
+        if (canonicalHost == null) {
+            return null;
+        }
+
+        // Now that the host is canonicalized we add the port back if it's not the
+        // default port for that url scheme
+        if (url.getPort() != -1 &&
+                ((url.getProtocol().equalsIgnoreCase("http") && url.getPort() != 80) ||
+                (url.getProtocol().equalsIgnoreCase("https") && url.getPort() != 443) ||
+                (url.getProtocol().equalsIgnoreCase("ftp") && url.getPort() != 21))) {
+            canonicalHost = canonicalHost + ":" + url.getPort();
+        }
+
+        String canonicalPath = canonicalizePath(url.getPath());
+
+        String canonicalUrl = url.getProtocol() + "://" + canonicalHost + canonicalPath;
+        if (StringUtils.isNotEmpty(url.getQuery()) || queryURL.endsWith("?")) {
+            canonicalUrl += "?" + url.getQuery();
+        }
+
+        return canonicalUrl;
 	}
 
-    private int convertIpAddress(String ipAddr) {
-        String[] components = ipAddr.split("\\.");
+    private String canonicalizePath(String path) {
+        if (StringUtils.isEmpty(path)) {
+            return "/";
+        }
+
+        // There are some cases where the path will not start with '/'.  Example:
+        // "ftp://host.com?q"  -- the hostname is 'host.com' and the path '%3Fq'.
+        // Browsers typically do prepend a leading slash to the path in this case,
+        // we'll do the same.
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        path = escape(path);
+
+        Stack<String> pathComponents = new Stack<String>();
+        for (String pathComponent : StringUtils.split(path, '/')) {
+             // If the path component is '..' we skip it and remove the preceding path
+            // component if there are any.
+            if (pathComponent.equals("..")) {
+                if (!pathComponents.isEmpty()) {
+                    pathComponents.pop();
+                }
+            } else if (!pathComponent.equals(".") && !pathComponent.equals("")) {
+                // We skip empty path components to remove successive slashes (i.e.,
+                // // -> /).  Note: this means that the leading and trailing slash will
+                // also be removed and need to be re-added afterwards.
+                //
+                // If the path component is '.' we also skip it (i.e., /./ -> /).
+                pathComponents.add(pathComponent);
+            }
+        }
+
+        // Put the path components back together and re-add the leading slash which
+        // got stripped by removing empty path components.
+        String canonicalPath = "/" + StringUtils.join(pathComponents, "/");
+        // If necessary we also re-add the trailing slash.
+        if (path.endsWith("/") && !canonicalPath.endsWith("/")) {
+            canonicalPath += "/";
+        }
+
+        return canonicalPath;
+    }
+
+    private String escape(String unescaped) {
+        try {
+            String unquoted = codec.decode(unescaped);
+            while (!unquoted.equals(unescaped)) {
+                unescaped = unquoted;
+                unquoted = codec.decode(unquoted);
+            }
+
+            return codec.encode(unquoted);
+
+            /*
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < unquoted.length(); i++) {
+                char c = unquoted.charAt(i);
+
+                if (SAFE_CHARS.contains(c + "")) {
+                    sb.append(c);
+                } else {
+                    sb.append(URLEncoder.encode(String.valueOf(c), "UTF-8"));
+                }
+            }
+            return sb.toString();
+            */
+        } catch (Exception e) {
+            logger.error("fail to escape", e);
+            return null;
+        }
+    }
+
+    public String canonicalizeHost(String host) {
+        if (StringUtils.isEmpty(host)) {
+            return null;
+        }
+
+        host = escape(StringUtils.lowerCase(host));
+
+        String ip = canonicalizeIp(host);
+        if (ip != null) {
+            return ip;
+        } else {
+            // Host is a normal hostname.
+            // Skip trailing, leading and consecutive dots.
+            String[] hostSplit = StringUtils.split(host, '.');
+            if (hostSplit.length < 2) {
+                return null;
+            } else {
+                return StringUtils.join(hostSplit, '.');
+            }
+        }
+    }
+
+    public String canonicalizeIp(String host) {
+        if (StringUtils.length(host) <= 15) {
+            // The Windows resolver allows a 4-part dotted decimal IP address to have a
+            // space followed by any old rubbish, so long as the total length of the
+            // string doesn't get above 15 characters. So, "10.192.95.89 xy" is
+            // resolved to 10.192.95.89.
+            // If the string length is greater than 15 characters,
+            // e.g. "10.192.95.89 xy.wildcard.example.com", it will be resolved through
+            // DNS.
+            Matcher ipWithTrailingSpaceMatched = IP_WITH_TRAILING_SPACE.matcher(host);
+
+            if (ipWithTrailingSpaceMatched.find()) {
+                host = ipWithTrailingSpaceMatched.group(1);
+            }
+        }
+
+        if (!POSSIBLE_IP.matcher(host).find()) {
+            return null;
+        }
+
+        // Skip trailing, leading and consecutive dots.
+        return convertIpAddress(host);
+    }
+
+    private String convertIpAddress(String ipAddr) {
+        String[] ipAddrSplit = StringUtils.split(ipAddr, '.');
+
+        if (ipAddrSplit.length > 4) {
+            return null;
+        }
+
+        // Basically we should parse octal if we can, but if there are illegal octal
+        // numbers, i.e. 08 or 09, then we should just look at decimal and hex.
+        boolean allowOctal = !FIND_BAD_OCTAL_REGEXP.matcher(ipAddr).find();
 
         BigInteger ipNumeric = BigInteger.ZERO;
         int i = 0;
-        while (i < components.length - 1) {
+        while (i < ipAddrSplit.length - 1) {
             ipNumeric = ipNumeric.shiftLeft(8);
-            ipNumeric = ipNumeric.add(convertComponent(components[i]));
+            BigInteger componentBigInt = convertComponent(ipAddrSplit[i], allowOctal);
+            if (componentBigInt == null) {
+                return null;
+            }
+
+            ipNumeric = ipNumeric.add(componentBigInt);
             i++;
         }
         while (i < 4) {
             ipNumeric = ipNumeric.shiftLeft(8);
             i++;
         }
-        ipNumeric = ipNumeric.add(convertComponent(components[components.length - 1]));
+        BigInteger componentBigInt = convertComponent(ipAddrSplit[ipAddrSplit.length - 1], allowOctal);
+        if (componentBigInt == null) {
+            return null;
+        }
+        ipNumeric = ipNumeric.add(componentBigInt);
 
-        return ipNumeric.intValue();
+        return InetAddresses.fromInteger((ipNumeric.intValue())).getHostAddress();
     }
 
-    private BigInteger convertComponent(String component) {
-        if (component.startsWith("0x") || component.startsWith("0X")) {
-            return new BigInteger(component.substring(2), 16);
-        } else if (component.startsWith("0")) {
-            return new BigInteger(component, 8);
+    private BigInteger convertComponent(String component, boolean allowOctal) {
+        Matcher matcher;
+
+        if ((matcher = HEX.matcher(component)).find()) {
+            return new BigInteger(matcher.group(1), 16);
+        } else if (allowOctal && (matcher = OCT.matcher(component)).find()) {
+            return new BigInteger(matcher.group(1), 8);
+        } else if (((matcher = DEC.matcher(component)).find())) {
+            return new BigInteger(matcher.group(1));
         } else {
-            return new BigInteger(component);
+            return null;
         }
     }
-		
-	
-	/** Returns the canonicalized form of a URL, core logic written by Henrik Sjostrand, heavily modified for v2 by Dave Shanley.
-	 * @author Henrik Sjostrand, Netvouz, http://www.netvouz.com/, info@netvouz.com & Dave Shanley <dave@buildabrand.com>
-	 * @param queryURL
-	 * @return
-	 * @throws GSBException
-	 */
-	public String canonicalizeURL(String queryURL) {
-		
-		if (queryURL == null)
-			return null;
-
-		String url = queryURL;
-		
-		try {
-
-			/* first of all extract the components of the URL to make sure that it has a protocol! */
-			if(url.indexOf("http://") <=-1 && url.indexOf("https://")<=-1) url = "http://"+url;
-			
-			url = url.replaceAll("[\\t\\n\\r\\f\\e]*", ""); // replace all whitespace and escape characters.
-
-			URL theURL = new URL(url);
-			String host = theURL.getHost();
-			String path = theURL.getPath();
-			String query = theURL.getQuery();
-			String protocol = theURL.getProtocol();
-			if(protocol==null||protocol.isEmpty()) protocol = "http";
-			int port = theURL.getPort();
-			String user = theURL.getUserInfo();
-
-			/* escape host */
-			logger.debug("pre-escaped host: {}", host);
-			host = unescape(host);
-			logger.debug("post-escaped host: {}", host);
-
-			/* decode host / IP */
-			host = decodeHost(host);
-			logger.debug("decoded host: {}", host);
-
-
-			/* escape non standard characters for host */
-			StringBuilder sb = new StringBuilder();
-			for (int i = 0; i < host.length(); i++) {
-				char c = host.charAt(i);
-				if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '.' || c == '-')
-					sb.append(c);
-				else
-					sb.append(codec.encode(String.valueOf(c))); // Escape using UTF-8
-			}
-			host = sb.toString();
-
-			/* remove leading and trailing dots */
-			while (host.startsWith("."))
-				host = host.substring(1);
-			while (host.endsWith("."))
-				host = host.substring(0, host.length() - 1);
-
-			/* replace consecutive dots with a single dot */
-			int p = 0;
-			while ((p = host.indexOf("..")) != -1)
-				host = host.substring(0, p + 1) + host.substring(p + 2);
-
-			/* add a trailing slash if the path is empty */
-			if ("".equals(path))
-				host = host + "/";
-			
-			/* find and replace any dodgy decoded escape characters */
-			Pattern pattern =  Pattern.compile("([a-z]{1})([0-9]{2})");
-			Matcher matcher = pattern.matcher(host);
-		    String val = "$2";
-		    while (matcher.find()) {
-		    	logger.debug(":::TEXT FOUND {} starting at index {} and ending at index {}", 
-		    			new Object[] {matcher.group(), matcher.start(), matcher.end()});
-	               host = matcher.replaceAll(val);
-	              logger.debug("::TEXT {}", host);
-		    }
-
-			/* replace any encoded percentage signs */
-		    host = host.replaceAll("(?i)%5C", "%");
-
-			/* unescape path to remove all hex encodings */
-		    logger.debug("pre-escaped path: {}", path);
-			path = unescape(path);
-			logger.debug("post-escaped path: {}", path);
-
-			/* remove double slashes from path  */
-			while ((p = path.indexOf("//")) != -1)
-				path = path.substring(0, p + 1) + path.substring(p + 2);
-
-			/* remove /./ occurences from path */
-			while ((p = path.indexOf("/./")) != -1)
-				path = path.substring(0, p + 1) + path.substring(p + 3);
-
-			/* resolve /../ occurences in path */
-			while ((p = path.indexOf("/../")) != -1) {
-				int previousSlash = path.lastIndexOf("/", p-1);
-				// if (previousSlash == -1) previousSlash = 0; // If path begins with /../
-				path = path.substring(0, previousSlash) + path.substring(p + 3);
-				p = previousSlash;
-			}
-
-			/* use URI class to normalise the URL */
-			URI uri = null;
-			try {
-
-				/* only normalise if the host doesn't contain some odd hex */
-				if(!host.contains("%") && !host.matches("[\\s].*")) { 
-					logger.debug("normalising URL......");
-					uri = new URI(protocol, user, host, -1, path, query, null);
-					logger.debug("{} <-- normalised path", uri.normalize().getPath().toString());
-				}
-
-			} catch (URISyntaxException exp) {
-				
-				try {
-
-					/* only normalise if the host doesn't contain some odd hex */
-					if(!host.contains("%") && !host.matches(".*[\\s].*")) { 
-						logger.debug("error normalising URL");
-						uri = new URI(protocol, user, unescape(host), -1, path, query, null);
-						logger.debug("{} <-- normalised path after error debug", uri.normalize().getPath().toString());
-					}
-
-				} catch (URISyntaxException e) {
-					
-					// total fail, forget it.
-				}
-			}
-
-			/* only use URI normalized URL if it's not a total failure */
-			if(uri!=null && !uri.normalize().getPath().toString().trim().isEmpty()) {
-				logger.debug("normalized path is: empty!");
-				path = uri.normalize().getPath().toString();
-			}  
-
-			/* debug code */
-			logger.debug("post-cleaned path: {}", path);
-			logger.debug("post-processed host: {}", host);
-			
-			
-			/* escape the path */
-			path = escape(path);
-
-			/* replace all semi-colons */
-			path = path.replaceAll("[;]*", ""); 
-
-			/* unescape the query */
-			query = unescape(query);
-
-			/* re-escape the query */
-			query = escape(query);
-
-
-			/* re-assemble the URL */
-			sb.setLength(0);
-			sb.append(protocol + ":");
-		
-			sb.append("//");
-			if (user != null)
-				sb.append(user + "@");
-
-			if (port != -1) {
-
-				/* remove slash from host */
-				logger.debug("removing last slash: {}", host.lastIndexOf("/",host.length()));
-				
-				if(host.lastIndexOf("/",host.length())>8) {
-					logger.debug("new host name: {}", host.substring(0,host.length()-1));
-					
-					host = host.substring(0,host.length()-1);
-				}
-				sb.append(host);
-				sb.append(":");
-				sb.append(port);
-			} else {
-				sb.append(host);
-			}
-			
-			/* make sure any hashes are re-encoded back to %23*/
-			path = path.replaceAll("#","%23");
-			
-			sb.append(path);
-			if(sb.toString().endsWith("//")) sb = sb.replace(sb.length()-1, sb.length(), "");
-			
-			if (query != null)
-				sb.append("?" + query);
-			
-			url = sb.toString();
-
-			logger.debug("canonicalised url is: {}", url);
-			
-			
-		} catch (Exception e) {
-			e.printStackTrace();
-			// TODO handle exception
-			//throw new GSBException("Could not canonicalise URL: " + queryURL);
-		}
-		
-		
-		logger.debug("final decoding URL: {}", url);
-
-		return url;
-	}
-	
-	/** Escapes a string by replacing characters having ASCII <=32, >=127, or % with their UTF-8-escaped codes 
-	 * 
-	 * @param url
-	 * @return escaped url
-	 * @author Henrik Sjostrand, Netvouz, http://www.netvouz.com/, info@netvouz.com
-	 */
-	private String escape(String url) {
-		if (url == null)
-			return null;
-		StringBuffer sb = new StringBuffer();
-		for (int i = 0; i < url.length(); i++) {
-			char c = url.charAt(i);
-			if (c == ' ')
-				sb.append("%20");
-			else if (c <= 32 || c >= 127 || c == '%') {
-					sb.append(codec.encode(String.valueOf(c))); // replace crappy URLDecoder form v1 with something a little more useful.
-			} else
-				sb.append(c);
-		}
-		return sb.toString();
-	}
 }
