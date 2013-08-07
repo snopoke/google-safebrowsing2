@@ -3,6 +3,7 @@
 
 This project implements the [Google Safebrowsing API v2](https://developers.google.com/safe-browsing/) 
 and the [Google Safebrowsing Lookup API](https://developers.google.com/safe-browsing/lookup_guide) in Scala.
+It also works with [Yandex Safebrowsing API](http://api.yandex.com/safebrowsing/).
 
 See [Zscaler blog post](http://research.zscaler.com/2011/12/switch-to-google-safe-browsing-v2.html) for other implementations and notes 
 
@@ -13,6 +14,8 @@ See [Zscaler blog post](http://research.zscaler.com/2011/12/switch-to-google-saf
 	val tablePrefix = "gsb2_"
 	val storage = new MySQL(LiteDataSource.driverManager(dburl, "user", "pass"), tablePrefix)
 	val sb2 = new SafeBrowsing2(apikey, storage)
+	// uses Google database by default, you can use Yandex like this:
+	// val sb2 = new SafeBrowsing(apikey, storage, "yandex")
 	
 	// update database
 	val forceUpdate = false
@@ -115,3 +118,4 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 * ExpressionGenerator inspired by the [google-safe-browsing](http://code.google.com/p/google-safe-browsing/) python module.
 * JDBC API by [Stepan Koltsov](https://bitbucket.org/stepancheg/scala-misc/)
 * [Edward Chu](https://github.com/edwardchu)
+* [Alexey Lapitsky](https://github.com/vzctl)
