@@ -46,12 +46,29 @@ import org.joda.time.Duration
  * 
  * 
  */
-class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
-  val MALWARE = "goog-malware-shavar"
-  val PHISHING = "googpub-phish-shavar"
-  val defaultLists = Array(MALWARE, PHISHING)
+class SafeBrowsing2(apikey: String, storage: Storage, provider: String) extends Logging {
+  def this(apikey: String, storage: Storage) = this(apikey, storage, "google")
+
+  val (malware, phishing, pver, base_url, newkey_url) = {
+    if (provider == "google") {
+      ("goog-malware-shavar",
+       "googpub-phish-shavar",
+       "2.2",
+       "http://safebrowsing.clients.google.com/safebrowsing",
+       "http://sb-ssl.google.com/safebrowsing/safebrowsing/newkey")
+    } else if (provider == "yandex") {
+      ("ydx-malware-shavar",
+       "ydx-phish-shavar",
+       "2.3",
+       "http://sba.yandex.net",
+       "http://sba.yandex.net/newkey")
+    } else {
+      throw new IllegalArgumentException("don't know provider " + provider)
+    }
+  }
+
   val appver = "0.1"
-  var pver = "2.2"
+  val defaultLists = Array(malware, phishing)
   var httpClient: Client = new Client
 
   /**
@@ -105,7 +122,7 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       }
     }
 
-    var postUrl = "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+    var postUrl = base_url + "/downloads?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
     macKey map { key =>
       postUrl += "&wrkey=" + key.wrappedKey
     }
@@ -348,9 +365,10 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
       val prefix = if (p.prefix.isEmpty()) p.hostkey else p.prefix
       hex2Bytes(prefix)
     }).reduce(_ ++ _)
+
     logger.trace("Full hash request body:\n{}", new String(body))
 
-    var url = "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
+    var url = base_url + "/gethash?client=api&apikey=" + apikey + "&appver=" + appver + "&pver=" + pver;
     macKey.foreach(key => url += "&wrkey=" + key.wrappedKey)
 
     val res = httpClient.POST(url, body, Map())
@@ -530,9 +548,8 @@ class SafeBrowsing2(apikey: String, storage: Storage) extends Logging {
 
   private def requestMacKeys: Option[MacKey] = {
     logger.debug("Requesting mac keys")
-    val url = "http://sb-ssl.google.com/safebrowsing/newkey"
     val c = new Client
-    val resp = c.GET(url, Map(
+    val resp = c.GET(newkey_url, Map(
       "client" -> "api",
       "apikey" -> apikey,
       "appver" -> appver,
