@@ -9,6 +9,7 @@ See [Zscaler blog post](http://research.zscaler.com/2011/12/switch-to-google-saf
 
 ## Usage in Scala
 ### Safe Browsing API
+```scala
 	val apikey = "123456"
 	val dburl = "jdbc:mysql://localhost:3306/googlesafebrowsing2"
 	val tablePrefix = "gsb2_"
@@ -29,12 +30,15 @@ See [Zscaler blog post](http://research.zscaler.com/2011/12/switch-to-google-saf
 	  case Some(list) => println("Match found in list: " + list)
 	  case None => println("No match found")
 	}
+```
 
 ### Lookup API
+```scala
 	val resp = new Lookup(apikey).lookup(Array("http://www.google.com/", "http://ianfette.org/"))
 	resp.foreach(a => {
 	  println(a._1 + " -> " + a._2)
 	})
+```
 	
 Outputs:
 
@@ -43,6 +47,7 @@ Outputs:
 	
 ## Usage in Java
 ### Safe Browsing API
+```java
 	String apikey = "123456";
 	String url = "jdbc:mysql://localhost:3306/googlesafebrowsing2";
 	String tablePrefix = "gsb2_";
@@ -62,13 +67,16 @@ Outputs:
 	String match = sb2.jlookup("http://ianfette.org", lookupLists, useMac);
 	if (match != null)
 		System.out.println("Match found in list: " + match);
+```
 	
 ### Lookup API
+```java
 	Lookup lookup = new Lookup(apikey, "appname");
 	Map<String, String> r = lookup.jlookup(new String[]{"http://ianfette.org"}, 0);
 	for (String key : r.keySet()) {
 		System.out.println(key + " -> " + r.get(key));
 	}
+```
 
 ## Test URLs
 The follow URLs are used to test Safe Browsing API:
