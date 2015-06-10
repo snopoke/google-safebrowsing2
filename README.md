@@ -117,7 +117,7 @@ New Storage classes can be added by extending the net.google.safebrowsing2.db.DB
 * Apache httpclient-4.1
 * Apache httpcore-4.1
 * Apache commons-codec-1.4
-* scala-library-2.9.1
+* scala-library-2.11
 
 ## Attributions
 * The is based off Julien Sobrier's [Net-Google-SafeBrowsing2](https://github.com/juliensobrier/Net-Google-SafeBrowsing2) perl module.
